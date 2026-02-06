@@ -5,6 +5,7 @@ let
   hyperRecoveryThemeAssets = pkgs.runCommand "hyper-recovery-theme-assets" {
     nativeBuildInputs = [ pkgs.python3 pkgs.python3Packages.pillow ];
     src = ./scripts/generate_theme_assets.py;
+    fonts = ./assets/fonts;
   } ''
     mkdir -p $out/grub $out/plymouth
     
@@ -14,6 +15,10 @@ let
     
     # Copy script
     cp $src generate_assets.py
+    
+    # Copy fonts
+    mkdir -p assets/fonts
+    cp $fonts/* assets/fonts/
     
     # Patch script to output to current directory
     sed -i 's|BASE_DIR = Path(__file__).resolve().parent.parent|BASE_DIR = Path(".")|' generate_assets.py

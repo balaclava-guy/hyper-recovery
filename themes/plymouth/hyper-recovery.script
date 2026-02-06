@@ -1,0 +1,77 @@
+Window.SetBackgroundTopColor(0.02, 0.02, 0.05);
+Window.SetBackgroundBottomColor(0.00, 0.00, 0.00);
+
+bg_image = Image("hyper-recovery-bg.png");
+bg_sprite = Sprite(bg_image);
+bg_sprite.SetPosition(0, 0, -50);
+
+logo_image = Image("hyper-recovery-logo.png");
+logo_sprite = Sprite(logo_image);
+logo_sprite.SetPosition(
+    Window.GetX() + Window.GetWidth() / 2 - logo_image.GetWidth() / 2,
+    Window.GetHeight() * 0.08,
+    10
+);
+
+glow_image = Image("hyper-recovery-glow.png");
+glow_sprite = Sprite(glow_image);
+glow_sprite.SetOpacity(0.5);
+glow_sprite.SetPosition(
+    Window.GetX() + Window.GetWidth() / 2 - glow_image.GetWidth() / 2,
+    Window.GetHeight() * 0.33,
+    5
+);
+
+frame_image = Image("hyper-recovery-progress-frame.png");
+frame_sprite = Sprite(frame_image);
+frame_x = Window.GetX() + Window.GetWidth() / 2 - frame_image.GetWidth() / 2;
+frame_y = Window.GetHeight() * 0.78;
+frame_sprite.SetPosition(frame_x, frame_y, 15);
+
+bar_original = Image("hyper-recovery-progress-bar.png");
+bar_sprite = Sprite();
+bar_sprite.SetPosition(frame_x + 24, frame_y + 10, 16);
+bar_sprite.SetImage(bar_original.Scale(1, bar_original.GetHeight()));
+
+global.glow_phase = 0;
+
+fun refresh_callback ()
+  {
+    global.glow_phase += 0.06;
+    offset = Math.Sin(global.glow_phase);
+    glow_sprite.SetOpacity((offset + 1) / 2 * 0.5 + 0.25);
+    glow_sprite.SetPosition(
+        Window.GetX() + Window.GetWidth() / 2 - glow_image.GetWidth() / 2 + offset * 30,
+        Window.GetHeight() * 0.33,
+        5
+    );
+  }
+
+Plymouth.SetRefreshFunction(refresh_callback);
+
+fun progress_callback (duration, progress)
+  {
+    width = Math.Max(1, Math.Int(bar_original.GetWidth() * progress));
+    scaled_image = bar_original.Scale(width, bar_original.GetHeight());
+    bar_sprite.SetImage(scaled_image);
+  }
+
+Plymouth.SetBootProgressFunction(progress_callback);
+
+message_sprite = Sprite();
+message_sprite.SetPosition(40, Window.GetHeight() - 120, 300);
+
+fun display_message_callback (text)
+  {
+    text_image = Image.Text(text, 0.7, 0.9, 1);
+    message_sprite.SetImage(text_image);
+  }
+
+fun hide_message_callback (text)
+  {
+    empty = Image.Text("", 0.7, 0.9, 1);
+    message_sprite.SetImage(empty);
+  }
+
+Plymouth.SetDisplayMessageFunction(display_message_callback);
+Plymouth.SetHideMessageFunction(hide_message_callback);
