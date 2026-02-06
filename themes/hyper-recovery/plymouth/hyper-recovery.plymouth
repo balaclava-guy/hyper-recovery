@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Hyper Recovery
+Description=Street Fighter inspired theme
+ModuleName=script
+
+[script]
+ImageDir=.
+ScriptFile=hyper-recovery.script

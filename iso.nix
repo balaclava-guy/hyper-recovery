@@ -1,10 +1,74 @@
 { config, pkgs, lib, ... }:
 
+let
+  # 1. Generate Assets using Python/Pillow
+  hyperRecoveryThemeAssets = pkgs.runCommand "hyper-recovery-theme-assets" {
+    nativeBuildInputs = [ pkgs.python3 pkgs.python3Packages.pillow ];
+    src = ./scripts/generate_theme_assets.py;
+  } ''
+    mkdir -p $out/grub $out/plymouth
+    
+    # Create a working directory
+    mkdir work
+    cd work
+    
+    # Copy script
+    cp $src generate_assets.py
+    
+    # Patch script to output to current directory
+    sed -i 's|BASE_DIR = Path(__file__).resolve().parent.parent|BASE_DIR = Path(".")|' generate_assets.py
+    
+    # Run script (outputs to ./assets/grub and ./assets/plymouth)
+    python3 generate_assets.py
+    
+    # Install
+    cp assets/grub/* $out/grub/
+    cp assets/plymouth/* $out/plymouth/
+  '';
+
+  # 2. Plymouth Theme Package
+  hyperRecoveryPlymouthTheme = pkgs.stdenv.mkDerivation {
+    name = "hyper-recovery-plymouth-theme";
+    src = ./themes/hyper-recovery/plymouth;
+    
+    installPhase = ''
+      mkdir -p $out/share/plymouth/themes/hyper-recovery
+      
+      # Copy config files from src
+      cp * $out/share/plymouth/themes/hyper-recovery/
+      
+      # Copy generated assets
+      cp ${hyperRecoveryThemeAssets}/plymouth/* $out/share/plymouth/themes/hyper-recovery/
+      
+      # Fix paths in .plymouth file
+      substituteInPlace $out/share/plymouth/themes/hyper-recovery/hyper-recovery.plymouth \
+        --replace "ImageDir=." "ImageDir=$out/share/plymouth/themes/hyper-recovery" \
+        --replace "ScriptFile=hyper-recovery.script" "ScriptFile=$out/share/plymouth/themes/hyper-recovery/hyper-recovery.script"
+    '';
+  };
+
+  # 3. GRUB Theme Package
+  hyperRecoveryGrubTheme = pkgs.stdenv.mkDerivation {
+    name = "hyper-recovery-grub-theme";
+    src = ./themes/hyper-recovery/grub;
+    
+    installPhase = ''
+      mkdir -p $out
+      
+      # Copy config
+      cp * $out/
+      
+      # Copy generated assets
+      cp ${hyperRecoveryThemeAssets}/grub/* $out/
+    '';
+  };
+
+in
 {
   # ZFS Support
   boot.supportedFilesystems = [ "zfs" ];
-  boot.zfs.forceImportRoot = false; # Don't auto-import on boot to avoid conflicts
-  networking.hostId = "8425e349"; # Required for ZFS
+  boot.zfs.forceImportRoot = false;
+  networking.hostId = "8425e349";
 
   # Kernel & Hardware
   boot.kernelPackages = pkgs.linuxPackages_latest;
@@ -78,12 +142,28 @@
   # ISO Specifics
   isoImage.squashfsCompression = "zstd";
   
-  # Serial console support
-  boot.kernelParams = [ "console=ttyS0,115200" "console=tty0" ];
+  # Serial console support & Splash
+  boot.kernelParams = [ "console=ttyS0,115200" "console=tty0" "splash" "boot.shell_on_fail" ];
   
+  # GRUB Theme (EFI)
+  boot.loader.grub = {
+    enable = true;
+    version = 2;
+    device = "nodev";
+    efiSupport = true;
+    theme = hyperRecoveryGrubTheme;
+    # We point to the file inside the theme package
+    splashImage = "${hyperRecoveryGrubTheme}/hyper-recovery-grub-bg.png";
+  };
+
+  # Plymouth Theme
+  boot.plymouth = {
+    enable = true;
+    theme = "hyper-recovery";
+    themePackages = [ hyperRecoveryPlymouthTheme ];
+  };
+
   # Syslinux Menu (BIOS)
-  # We override the default theme to add local boot options.
-  # Note: This replaces the graphical NixOS menu with a text/simple menu.
   isoImage.syslinuxTheme = lib.mkForce ''
     DEFAULT boot
     TIMEOUT 100

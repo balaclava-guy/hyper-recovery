@@ -1,0 +1,64 @@
+# Hyper Recovery Plymouth Script
+
+# Screen dimensions
+screen_width = Window.GetWidth();
+screen_height = Window.GetHeight();
+
+# Background
+bg_image = Image("hyper-recovery-bg.png");
+bg_sprite = Sprite(bg_image.Scale(screen_width, screen_height));
+bg_sprite.SetZ(-100);
+
+# Logo
+logo_image = Image("hyper-recovery-logo.png");
+logo_sprite = Sprite(logo_image);
+logo_sprite.SetX((screen_width - logo_image.GetWidth()) / 2);
+logo_sprite.SetY((screen_height - logo_image.GetHeight()) / 2 - 100);
+logo_sprite.SetZ(10);
+
+# Health Bar Frame (Box)
+box_image = Image("hyper-recovery-progress-frame.png");
+box_sprite = Sprite(box_image);
+box_x = (screen_width - box_image.GetWidth()) / 2;
+box_y = (screen_height - box_image.GetHeight()) / 2 + 150;
+box_sprite.SetX(box_x);
+box_sprite.SetY(box_y);
+box_sprite.SetZ(10);
+
+# Health Bar Fill
+bar_image = Image("hyper-recovery-progress-bar.png");
+bar_sprite = Sprite();
+bar_sprite.SetX(box_x + 5); # Offset for padding
+bar_sprite.SetY(box_y + 5);
+bar_sprite.SetZ(9); # Behind the frame if frame has transparency, or just inside
+
+# Progress Function
+fun progress_callback (duration, progress) {
+    if (progress < 0) progress = 0;
+    if (progress > 1) progress = 1;
+    
+    # Calculate width based on progress
+    # Original bar width is approx 590 (based on box 600)
+    full_width = bar_image.GetWidth();
+    current_width = full_width * progress;
+    
+    if (current_width < 1) current_width = 1;
+    
+    # Crop the bar image to simulate filling up
+    # We use Scale to "reveal" it or just crop it? 
+    # Plymouth doesn't have a simple "Crop" for sprites easily accessible in all versions.
+    # A common trick is to scale the image or use a mask.
+    # Let's try scaling the width, which looks like it's growing.
+    
+    scaled_bar = bar_image.Scale(current_width, bar_image.GetHeight());
+    bar_sprite.SetImage(scaled_bar);
+}
+
+Plymouth.SetBootProgressFunction(progress_callback);
+
+# Message handling (optional)
+fun message_callback (text) {
+    # text_sprite.SetImage(Image.Text(text, 1, 1, 1));
+}
+
+Plymouth.SetMessageFunction(message_callback);
