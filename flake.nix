@@ -10,6 +10,8 @@
   };
 
   outputs = { self, nixpkgs, nixos-generators, ... }: {
+    # Note: This defines an x86_64-linux ISO.
+    # If building on macOS (aarch64-darwin), you need a remote builder or linux-builder.
     packages.x86_64-linux = {
       iso = nixos-generators.nixosGenerate {
         system = "x86_64-linux";
