@@ -46,6 +46,8 @@
     nvme-cli
     os-prober
     efibootmgr
+    wpa_supplicant
+    dhcpcd
     
     (pkgs.writeShellScriptBin "import-proxmox-pools" ''
       #!/bin/sh
@@ -62,6 +64,9 @@
   # Networking
   networking.networkmanager.enable = true;
   networking.firewall.enable = false;
+
+  # Nix Configuration
+  nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
   # User Configuration
   users.users.root.password = "nixos";
@@ -91,8 +96,7 @@
     LABEL boot
       MENU LABEL NixOS Installer / Hypervisor
       LINUX /boot/bzImage
-      INITRD /boot/initrd
-      APPEND ${toString config.boot.kernelParams} init=${config.system.build.toplevel}/init
+      APPEND init=${config.system.build.toplevel}/init ${toString config.boot.kernelParams} initrd=/boot/initrd
 
     LABEL disk1
       MENU LABEL Boot from First Hard Disk (hd0)
