@@ -10,6 +10,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
     - uses: actions/checkout@v4
 
@@ -24,7 +27,9 @@ jobs:
         swap-storage: true
 
     - uses: DeterminateSystems/nix-installer-action@v16
-    - uses: DeterminateSystems/magic-nix-cache-action@v8
+    - uses: DeterminateSystems/magic-nix-cache-action@v13
+      with:
+        use-flakehub: false
 
     - name: Build ISO
       run: nix build .#iso --out-link result-iso
