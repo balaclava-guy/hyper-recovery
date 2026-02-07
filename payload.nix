@@ -147,6 +147,7 @@ in
     efiSupport = true;
     device = "nodev";
   };
+  boot.loader.systemd-boot.enable = lib.mkForce false;
 
   # Log Capture Service
   systemd.services.save-boot-logs = {
