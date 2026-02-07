@@ -26,7 +26,7 @@
   in
   {
     devShells.${system}.default = pkgs.mkShell {
-      packages = [ pkgs.peazip pkgs.p7zip ];
+      packages = [ pkgs.p7zip ];
     };
 
     packages.${system} = {
@@ -53,11 +53,7 @@
       # 5. Compressed artifacts (7z LZMA2)
       images-7z =
         let
-          imageFiles =
-            nixpkgs.lib.mapAttrsToList
-              (_: image: "${image}/${image.passthru.filePath}")
-              myOS.config.system.build.images;
-          imageFilesArgs = nixpkgs.lib.escapeShellArgs imageFiles;
+          images = myOS.config.system.build.images;
         in
         pkgs.runCommand "snosu-hyper-recovery-images-7z" {
           nativeBuildInputs = [ pkgs.p7zip pkgs.coreutils ];
@@ -65,17 +61,25 @@
           set -euo pipefail
           mkdir -p $out
 
-          workdir=$(mktemp -d)
-          for file in ${imageFilesArgs}; do
-            if [ ! -f "$file" ]; then
-              echo "Missing image file: $file" >&2
-              exit 1
-            fi
-            base_name=$(basename "$file")
-            cp "$file" "$workdir/$base_name"
-            7z a -t7z -mx=9 "$out/''${base_name}.7z" "$workdir/$base_name"
-            rm -f "$workdir/$base_name"
-          done
+          # ISO
+          if [ -f "${images.iso}/${images.iso.passthru.filePath}" ]; then
+            7z a -t7z -mx=9 "$out/snosu-hyper-recovery-x86_64-linux.iso.7z" "${images.iso}/${images.iso.passthru.filePath}"
+          fi
+
+          # Debug ISO
+          if [ -f "${images.iso-debug}/${images.iso-debug.passthru.filePath}" ]; then
+            7z a -t7z -mx=9 "$out/snosu-hyper-recovery-debug-x86_64-linux.iso.7z" "${images.iso-debug}/${images.iso-debug.passthru.filePath}"
+          fi
+
+          # Raw USB Image
+          if [ -f "${images.raw-efi}/${images.raw-efi.passthru.filePath}" ]; then
+            7z a -t7z -mx=9 "$out/snosu-hyper-recovery-x86_64-linux.img.7z" "${images.raw-efi}/${images.raw-efi.passthru.filePath}"
+          fi
+
+          # QCOW2 VM Image
+          if [ -f "${images.qemu-efi}/${images.qemu-efi.passthru.filePath}" ]; then
+            7z a -t7z -mx=9 "$out/snosu-hyper-recovery-x86_64-linux.qcow2.7z" "${images.qemu-efi}/${images.qemu-efi.passthru.filePath}"
+          fi
         '';
     };
   };
