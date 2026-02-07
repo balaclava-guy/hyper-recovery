@@ -13,11 +13,11 @@ on:
 
 jobs:
   build:
-    # Only run if it was the Garnix check suite and it succeeded.
-    # We remove push/pull_request to ensure it ONLY runs after Garnix.
+    # Only run for Garnix check-suite completion or manual dispatch.
+    # If Garnix failed or is out of minutes, this job will do a fallback build.
     if: >
       github.event_name == 'workflow_dispatch' ||
-      (github.event.check_suite.app.slug == 'garnix-ci' && github.event.check_suite.conclusion == 'success')
+      github.event.check_suite.app.slug == 'garnix-ci'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -25,8 +25,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Free disk space
-      if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_build }}
+    - name: Free disk space (fallback builds only)
+      if: ${{ github.event_name == 'workflow_dispatch' || github.event.check_suite.conclusion != 'success' }}
       run: |
         sudo rm -rf /usr/share/dotnet
         sudo rm -rf /usr/local/lib/android
@@ -40,7 +40,7 @@ jobs:
           trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=
 
     - uses: DeterminateSystems/magic-nix-cache-action@v13
-      if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_build }}
+      if: ${{ github.event_name == 'workflow_dispatch' || github.event.check_suite.conclusion != 'success' }}
 
     - name: Fetch compressed artifacts (7z)
       run: nix build .#images-7z --out-link result-images-7z
