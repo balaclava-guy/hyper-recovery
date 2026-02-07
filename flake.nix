@@ -3,7 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    
+
     nixos-generators = {
       url = "github:nix-community/nixos-generators";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -14,13 +14,12 @@
   let
     system = "x86_64-linux";
     pkgs = import nixpkgs { inherit system; };
-    
+
     # Common OS configuration (The Payload)
     payload = ./payload.nix;
 
     # Image Packaging Definitions
     packaging = import ./packaging.nix { inherit inputs; };
-
   in
   {
     devShells.${system}.default = pkgs.mkShell {
@@ -38,8 +37,8 @@
       # 2. Debug ISO
       iso-debug = nixos-generators.nixosGenerate {
         inherit system;
-        modules = [ 
-          packaging.iso 
+        modules = [
+          packaging.iso
           ({ lib, ... }: {
             isoImage.isoName = lib.mkForce "snosu-hyper-recovery-debug-x86_64-linux.iso";
             boot.kernelParams = [ "loglevel=7" "systemd.log_level=debug" "rd.debug" "plymouth.debug" ];
@@ -69,6 +68,29 @@
         { name = "usb"; path = self.packages.${system}.usb; }
         { name = "vm"; path = self.packages.${system}.vm; }
       ];
+
+      # 5. Compressed artifacts (7z LZMA2)
+      images-7z = pkgs.runCommand "snosu-hyper-recovery-images-7z" {
+        nativeBuildInputs = [ pkgs.p7zip pkgs.findutils pkgs.coreutils ];
+      } ''
+        set -euo pipefail
+        mkdir -p $out
+
+        images_root="${self.packages.${system}.images}"
+        found=0
+
+        while IFS= read -r file; do
+          found=1
+          rel=$(realpath --relative-to="$images_root" "$file")
+          safe_name=$(echo "$rel" | sed 's|/|__|g')
+          7z a -t7z -mx=9 "$out/''${safe_name}.7z" "$file"
+        done < <(find -L "$images_root" -type f)
+
+        if [ "$found" -eq 0 ]; then
+          echo "No artifacts found under $images_root" >&2
+          exit 1
+        fi
+      '';
     };
   };
 }

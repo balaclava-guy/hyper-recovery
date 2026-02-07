@@ -4,6 +4,6 @@ builds:
     - "*.qcow2"
     - "*.iso"
   # By default garnix builds all packages in the flake.
-  # We want it to build the 'images' linkFarm which includes everything.
+  # We want it to build the compressed artifacts bundle.
   include:
-    - packages.x86_64-linux.images
+    - packages.x86_64-linux.images-7z
