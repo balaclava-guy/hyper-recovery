@@ -77,19 +77,22 @@
         mkdir -p $out
 
         images_root="${self.packages.${system}.images}"
-        found=0
+        files=$(find -L "$images_root" -type f \( \
+          -name "*.iso" -o -name "*.img" -o -name "*.qcow2" -o -name "*.qcow" \
+          -o -name "*.raw" -o -name "*.vmdk" -o -name "*.vhd" -o -name "*.vhdx" \
+        \))
+
+        if [ -z "$files" ]; then
+          echo "No image artifacts found under $images_root" >&2
+          find -L "$images_root" -maxdepth 4 -type f | head -n 50 >&2
+          exit 1
+        fi
 
         while IFS= read -r file; do
-          found=1
           rel=$(realpath --relative-to="$images_root" "$file")
           safe_name=$(echo "$rel" | sed 's|/|__|g')
           7z a -t7z -mx=9 "$out/''${safe_name}.7z" "$file"
-        done < <(find -L "$images_root" -type f)
-
-        if [ "$found" -eq 0 ]; then
-          echo "No artifacts found under $images_root" >&2
-          exit 1
-        fi
+        done <<< "$files"
       '';
     };
   };

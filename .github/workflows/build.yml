@@ -48,7 +48,14 @@ jobs:
     - name: Stage Artifacts
       run: |
         mkdir -p dist
-        cp result-images-7z/*.7z dist/
+        shopt -s nullglob
+        files=(result-images-7z/*.7z)
+        if [ ${#files[@]} -eq 0 ]; then
+          echo "No .7z artifacts produced in result-images-7z" >&2
+          ls -la result-images-7z >&2
+          exit 1
+        fi
+        cp "${files[@]}" dist/
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
