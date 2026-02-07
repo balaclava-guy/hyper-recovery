@@ -1,0 +1,31 @@
+:root {
+  --snosu-dark: #020409;
+  --snosu-glow: #f15a18;
+}
+
+body {
+  background: radial-gradient(circle at 20% -10%, rgba(255, 90, 0, 0.3), transparent 40%),
+    radial-gradient(circle at 80% 20%, rgba(255, 104, 35, 0.25), transparent 35%),
+    var(--snosu-dark);
+  color: #f8f8f8;
+}
+
+#badge {
+  inline-size: 210px;
+  block-size: 80px;
+  background-image: url("logo.png");
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+#brand::before {
+  content: "SNOSU Hyper Recovery";
+  font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  color: var(--snosu-glow);
+}
+
+.home .section {
+  --cockpit-panel-background: rgba(255, 255, 255, 0.04);
+}

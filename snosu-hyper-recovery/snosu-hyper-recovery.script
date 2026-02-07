@@ -1,0 +1,181 @@
+// Snosu Hyper Recovery Plymouth Script
+
+// Configuration
+frame_count = 120;
+fps = 24; // Approximate FPS
+min_loops = 1; // Minimum number of loops to play
+
+// Screen dimensions
+screen_width = Window.GetWidth();
+screen_height = Window.GetHeight();
+
+// Background
+Window.SetBackgroundTopColor(0.0, 0.0, 0.0);
+Window.SetBackgroundBottomColor(0.0, 0.0, 0.0);
+
+// Load animation images
+for (i = 1; i <= frame_count; i++)
+  {
+    images[i] = Image(i + ".png");
+  }
+
+// Load progress bar image
+progress_bar_image = Image("progress_bar.png");
+
+// Calculate scale factor to fit screen while maintaining aspect ratio
+// Images are now smaller (resized 50%), so we need to scale them up more
+image_width = images[1].GetWidth();
+image_height = images[1].GetHeight();
+
+scale_x = screen_width / image_width;
+scale_y = screen_height / image_height;
+
+if (scale_x < scale_y)
+  scale_factor = scale_x;
+else
+  scale_factor = scale_y;
+
+new_width = image_width * scale_factor;
+new_height = image_height * scale_factor;
+
+pos_x = (screen_width - new_width) / 2;
+pos_y = (screen_height - new_height) / 2;
+
+// Main Animation Sprite
+sprite = Sprite();
+sprite.SetX(pos_x);
+sprite.SetY(pos_y);
+
+// Progress Bar Sprite (Bouncing)
+progress_sprite = Sprite(progress_bar_image);
+progress_sprite.SetY(screen_height - 30); // 30px from bottom
+progress_bar_width = progress_bar_image.GetWidth();
+
+// Text Sprites (3 lines)
+// n-2 (Grey), n-1 (White), n+0 (Grey)
+text_sprite_n2 = Sprite();
+text_sprite_n1 = Sprite();
+text_sprite_n0 = Sprite();
+
+// Text Buffer
+msg_n2 = "";
+msg_n1 = "";
+msg_n0 = "";
+
+// State Variables
+progress = 1;
+tick_counter = 0;
+loop_counter = 0;
+should_quit = 0;
+user_skipped = 0;
+
+// --- Helper Functions ---
+
+fun truncate_and_format(text)
+  {
+    // Truncate to 80 chars
+    if (text.Length() > 80)
+      text = text.SubString(0, 80);
+    
+    // Add prefix/suffix
+    return "... " + text + " ...";
+  }
+
+fun update_text_sprites()
+  {
+    // Line n-2 (Grey)
+    if (msg_n2 != "") {
+      img = Image.Text(msg_n2, 0.5, 0.5, 0.5);
+      text_sprite_n2.SetImage(img);
+      text_sprite_n2.SetX(screen_width - img.GetWidth() - 20);
+      text_sprite_n2.SetY(screen_height - 110);
+    }
+
+    // Line n-1 (White)
+    if (msg_n1 != "") {
+      img = Image.Text(msg_n1, 1.0, 1.0, 1.0);
+      text_sprite_n1.SetImage(img);
+      text_sprite_n1.SetX(screen_width - img.GetWidth() - 20);
+      text_sprite_n1.SetY(screen_height - 80);
+    }
+
+    // Line n+0 (Grey)
+    if (msg_n0 != "") {
+      img = Image.Text(msg_n0, 0.5, 0.5, 0.5);
+      text_sprite_n0.SetImage(img);
+      text_sprite_n0.SetX(screen_width - img.GetWidth() - 20);
+      text_sprite_n0.SetY(screen_height - 50);
+    }
+  }
+
+// --- Callbacks ---
+
+fun refresh_callback ()
+  {
+    // Throttle to approx 24 FPS (assuming 50Hz refresh)
+    tick_counter++;
+    if (tick_counter % 2 == 0)
+      {
+        // Animation Logic
+        if (scale_factor == 1.0)
+          scaled_image = images[progress];
+        else
+          scaled_image = images[progress].Scale(new_width, new_height);
+          
+        sprite.SetImage(scaled_image);
+        
+        progress++;
+        if (progress > frame_count) {
+          progress = 1;
+          loop_counter++;
+        }
+
+        // Bouncing Progress Bar Logic
+        // Bounce range: right side of screen, width approx 300px
+        bounce_area_width = 300;
+        bounce_start_x = screen_width - bounce_area_width - 20;
+        
+        // Simple sine wave bounce
+        // tick_counter is monotonic, use it for phase
+        phase = tick_counter / 20.0; 
+        offset = (Math.Sin(phase) + 1) / 2 * (bounce_area_width - progress_bar_width);
+        
+        progress_sprite.SetX(bounce_start_x + offset);
+
+        // Check for quit condition
+        if (should_quit)
+          {
+            if (user_skipped || loop_counter >= min_loops)
+              Plymouth.Quit();
+          }
+      }
+  }
+
+fun update_status_callback (status)
+  {
+    // Shift buffer
+    msg_n2 = msg_n1;
+    msg_n1 = msg_n0;
+    msg_n0 = truncate_and_format(status);
+    
+    update_text_sprites();
+  }
+
+fun quit_callback ()
+  {
+    should_quit = 1;
+  }
+
+fun keyboard_callback (key)
+  {
+    // If Space (key code usually " " or check documentation, but any key can trigger skip)
+    // Plymouth passes the key string.
+    if (key == " ")
+      user_skipped = 1;
+  }
+
+// Register Callbacks
+Plymouth.SetRefreshFunction (refresh_callback);
+Plymouth.SetUpdateStatusFunction (update_status_callback);
+Plymouth.SetQuitFunction (quit_callback);
+Plymouth.SetKeyboardInputFunction (keyboard_callback);

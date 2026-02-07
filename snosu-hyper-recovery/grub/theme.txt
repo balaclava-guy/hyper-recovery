@@ -1,0 +1,62 @@
+# Snosu Hyper Recovery GRUB Theme
+
+# Global Property
+title-text: ""
+desktop-image: "background.png"
+desktop-color: "#000000"
+terminal-box: "terminal_box_*.png"
+terminal-font: "Hyper Fighting Regular 16"
+
+# Progress Bar (Countdown)
++ progress_bar {
+    id = "__timeout__"
+    left = 15%
+    top = 85%
+    width = 70%
+    height = 20
+    show_text = true
+    font = "Hyper Fighting Regular 14"
+    text_color = "#ffffff"
+    fg_color = "#ffffff"
+    bg_color = "#333333"
+    border_color = "#000000"
+}
+
+# Boot Menu
++ boot_menu {
+    left = 15%
+    width = 70%
+    top = 30%
+    height = 40%
+    item_font = "Hyper Fighting Regular 24"
+    item_color = "#cccccc"
+    selected_item_font = "Hyper Fighting Regular 24"
+    selected_item_color = "#ffffff"
+    selected_item_pixmap_style = "blob_*.png"
+    icon_width = 32
+    icon_height = 32
+    item_height = 40
+    item_spacing = 10
+}
+
+# System Info (Label)
++ label {
+    left = 15%
+    top = 80%
+    width = 70%
+    align = "center"
+    text = "Snosu Hyper Recovery System"
+    font = "Hyper Fighting Regular 14"
+    color = "#888888"
+}
+
+# Navigation Hint
++ label {
+    left = 15%
+    top = 90%
+    width = 70%
+    align = "center"
+    text = "Press Enter to boot, 'e' to edit commands"
+    font = "Hyper Fighting Regular 12"
+    color = "#666666"
+}
