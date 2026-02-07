@@ -51,34 +51,32 @@
       ];
 
       # 5. Compressed artifacts (7z LZMA2)
-      images-7z = pkgs.runCommand "snosu-hyper-recovery-images-7z" {
-        nativeBuildInputs = [ pkgs.p7zip pkgs.findutils pkgs.coreutils ];
-      } ''
-        set -euo pipefail
-        mkdir -p $out
+      images-7z =
+        let
+          imageFiles =
+            nixpkgs.lib.mapAttrsToList
+              (_: image: "${image}/${image.passthru.filePath}")
+              myOS.config.system.build.images;
+          imageFilesArgs = nixpkgs.lib.escapeShellArgs imageFiles;
+        in
+        pkgs.runCommand "snosu-hyper-recovery-images-7z" {
+          nativeBuildInputs = [ pkgs.p7zip pkgs.coreutils ];
+        } ''
+          set -euo pipefail
+          mkdir -p $out
 
-        images_root="${self.packages.${system}.images}"
-        files=$(find -L "$images_root" -type f \( \
-          -name "*.iso" -o -name "*.img" -o -name "*.qcow2" -o -name "*.qcow" \
-          -o -name "*.raw" -o -name "*.vmdk" -o -name "*.vhd" -o -name "*.vhdx" \
-        \))
-
-        if [ -z "$files" ]; then
-          echo "No image artifacts found under $images_root" >&2
-          find -L "$images_root" -maxdepth 4 -type f | head -n 50 >&2
-          exit 1
-        fi
-
-        workdir=$(mktemp -d)
-        while IFS= read -r file; do
-          rel=$(realpath --relative-to="$images_root" "$file")
-          safe_name=$(echo "$rel" | sed 's|/|__|g')
-          base_name=$(basename "$file")
-          cp "$file" "$workdir/$base_name"
-          7z a -t7z -mx=9 "$out/''${safe_name}.7z" "$workdir/$base_name"
-          rm -f "$workdir/$base_name"
-        done <<< "$files"
-      '';
+          workdir=$(mktemp -d)
+          for file in ${imageFilesArgs}; do
+            if [ ! -f "$file" ]; then
+              echo "Missing image file: $file" >&2
+              exit 1
+            fi
+            base_name=$(basename "$file")
+            cp "$file" "$workdir/$base_name"
+            7z a -t7z -mx=9 "$out/''${base_name}.7z" "$workdir/$base_name"
+            rm -f "$workdir/$base_name"
+          done
+        '';
     };
   };
 }
