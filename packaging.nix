@@ -2,7 +2,7 @@
 
 {
   # ISO Format Configuration
-  iso = {
+  iso = { lib, ... }: {
     imports = [
       "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
       ./payload.nix
@@ -22,9 +22,6 @@
     system.nixos.label = "";
     isoImage.prependToMenuLabel = "START HYPER RECOVERY";
     isoImage.appendToMenuLabel = "";
-
-    # Disable memtest to keep menu clean
-    boot.loader.grub.memtest86.enable = false;
 
     # Ensure initrd has loop/isofs for Ventoy
     boot.initrd.kernelModules = [ "loop" "isofs" ];

@@ -121,6 +121,9 @@ in
     settings.PermitRootLogin = "yes";
   };
 
+  # Disable memtest to keep menu clean
+  boot.loader.grub.memtest86.enable = lib.mkForce false;
+
   # Boot Branding
   boot.initrd.systemd.enable = true;
   boot.plymouth = {
