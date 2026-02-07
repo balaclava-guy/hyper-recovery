@@ -26,7 +26,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Free disk space (fallback builds only)
-      if: ${{ github.event_name == 'workflow_dispatch' || github.event.check_suite.conclusion != 'success' }}
+      if: ${{ github.event_name == 'workflow_dispatch' || github.event.check_suite.conclusion != 'success' || steps.cache_fetch.outcome == 'failure' }}
       run: |
         sudo rm -rf /usr/share/dotnet
         sudo rm -rf /usr/local/lib/android
@@ -40,9 +40,20 @@ jobs:
           trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=
 
     - uses: DeterminateSystems/magic-nix-cache-action@v13
-      if: ${{ github.event_name == 'workflow_dispatch' || github.event.check_suite.conclusion != 'success' }}
+      if: ${{ github.event_name == 'workflow_dispatch' || github.event.check_suite.conclusion != 'success' || steps.cache_fetch.outcome == 'failure' }}
 
-    - name: Fetch compressed artifacts (7z)
+    - name: Fetch compressed artifacts (Garnix cache only)
+      id: cache_fetch
+      if: ${{ github.event_name == 'check_suite' && github.event.check_suite.app.slug == 'garnix-ci' }}
+      continue-on-error: true
+      run: |
+        nix build .#images-7z --out-link result-images-7z \
+          --option substituters "https://cache.garnix.io" \
+          --option trusted-public-keys "cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=" \
+          --option fallback false
+
+    - name: Build compressed artifacts (fallback)
+      if: ${{ github.event_name == 'workflow_dispatch' || github.event.check_suite.conclusion != 'success' || steps.cache_fetch.outcome == 'failure' }}
       run: nix build .#images-7z --out-link result-images-7z
 
     - name: Stage Artifacts
