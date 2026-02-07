@@ -7,6 +7,9 @@
 
   # Set the ISO filename
   isoImage.isoName = "snosu-hyper-recovery-x86_64-linux.iso";
+  
+  # Set Volume ID for reliable booting
+  isoImage.volumeID = "SNOSU_RECOVERY";
 
   # Use custom GRUB theme for the ISO bootloader
   isoImage.grubTheme = config.boot.loader.grub.theme;
@@ -29,7 +32,7 @@
     LABEL boot
       MENU LABEL START HYPER RECOVERY
       LINUX /boot/bzImage
-      APPEND init=${config.system.build.toplevel}/init ${toString config.boot.kernelParams} initrd=/boot/initrd
+      APPEND init=${config.system.build.toplevel}/init ${toString config.boot.kernelParams} initrd=/boot/initrd root=live:CDLABEL=SNOSU_RECOVERY
 
     LABEL disk1
       MENU LABEL Boot from First Hard Disk (hd0)

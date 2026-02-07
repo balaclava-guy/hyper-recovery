@@ -5,6 +5,12 @@ frame_count = 120;
 fps = 24; // Approximate FPS
 min_loops = 1; // Minimum number of loops to play
 
+// Font Configuration
+// We use "Undefined Medium" which must be installed in the theme directory
+font_name = "Undefined Medium";
+font_size = 14;
+font_desc = font_name + " " + font_size;
+
 // Screen dimensions
 screen_width = Window.GetWidth();
 screen_height = Window.GetHeight();
@@ -85,7 +91,7 @@ fun update_text_sprites()
   {
     // Line n-2 (Grey)
     if (msg_n2 != "") {
-      img = Image.Text(msg_n2, 0.5, 0.5, 0.5);
+      img = Image.Text(msg_n2, 0.5, 0.5, 0.5, 1.0, font_desc);
       text_sprite_n2.SetImage(img);
       text_sprite_n2.SetX(screen_width - img.GetWidth() - 20);
       text_sprite_n2.SetY(screen_height - 110);
@@ -93,7 +99,7 @@ fun update_text_sprites()
 
     // Line n-1 (White)
     if (msg_n1 != "") {
-      img = Image.Text(msg_n1, 1.0, 1.0, 1.0);
+      img = Image.Text(msg_n1, 1.0, 1.0, 1.0, 1.0, font_desc);
       text_sprite_n1.SetImage(img);
       text_sprite_n1.SetX(screen_width - img.GetWidth() - 20);
       text_sprite_n1.SetY(screen_height - 80);
@@ -101,7 +107,7 @@ fun update_text_sprites()
 
     // Line n+0 (Grey)
     if (msg_n0 != "") {
-      img = Image.Text(msg_n0, 0.5, 0.5, 0.5);
+      img = Image.Text(msg_n0, 0.5, 0.5, 0.5, 1.0, font_desc);
       text_sprite_n0.SetImage(img);
       text_sprite_n0.SetX(screen_width - img.GetWidth() - 20);
       text_sprite_n0.SetY(screen_height - 50);
