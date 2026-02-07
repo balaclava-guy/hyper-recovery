@@ -13,6 +13,18 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Free disk space
+      run: |
+        df -h
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/.ghcup
+        sudo rm -rf /usr/local/share/boost
+        sudo apt-get clean
+        sudo rm -rf /var/lib/apt/lists/*
+        df -h
+
     - uses: cachix/install-nix-action@v27
       with:
         nix_path: nixpkgs=channel:nixos-unstable
