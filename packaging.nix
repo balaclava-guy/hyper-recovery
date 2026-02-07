@@ -1,38 +1,79 @@
 { inputs, ... }:
 
 {
-  # ISO Format Configuration
-  iso = { lib, ... }: {
+  images = { lib, ... }: {
     imports = [
-      "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
-      ./payload.nix
+      "${inputs.nixpkgs}/nixos/modules/image/images.nix"
     ];
 
-    # ISO Specific Overrides
-    isoImage.isoName = "snosu-hyper-recovery-x86_64-linux.iso";
-    isoImage.volumeID = "SNOSU_RECOVERY";
-    isoImage.makeEfiBootable = true;
-    isoImage.makeBiosBootable = true; # We'll theme this via syslinux for now until we move to full hybrid
+    image.modules.iso = { lib, config, ... }: {
+      imports = [
+        "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
+      ];
 
-    # Squashfs settings for speed/size
-    isoImage.squashfsCompression = "zstd -Xcompression-level 19";
+      image.fileName = lib.mkDefault "snosu-hyper-recovery-x86_64-linux.iso";
+      isoImage.volumeID = "SNOSU_RECOVERY";
+      isoImage.makeEfiBootable = true;
+      isoImage.makeBiosBootable = true;
+      isoImage.squashfsCompression = "zstd -Xcompression-level 19";
 
-    # Force the boot menu label to be clean
-    system.nixos.distroName = "";
-    system.nixos.label = "";
-    isoImage.prependToMenuLabel = "START HYPER RECOVERY";
-    isoImage.appendToMenuLabel = "";
+      isoImage.grubTheme = config.boot.loader.grub.theme;
 
-    # Ensure initrd has loop/isofs for Ventoy
-    boot.initrd.kernelModules = [ "loop" "isofs" ];
-  };
+      system.nixos.distroName = "";
+      system.nixos.label = "";
+      isoImage.prependToMenuLabel = "START HYPER RECOVERY";
+      isoImage.appendToMenuLabel = "";
 
-  # USB/Raw Image Configuration
-  usb = {
-    imports = [
-      ./payload.nix
-    ];
-    # We'll use this with nixos-generators or raw disk image module
-    # Logic is handled in flake.nix using the 'raw-efi' format
+      boot.initrd.kernelModules = [ "loop" "isofs" ];
+    };
+
+    image.modules.iso-debug = { lib, config, ... }: {
+      imports = [
+        "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
+      ];
+
+      image.fileName = lib.mkDefault "snosu-hyper-recovery-debug-x86_64-linux.iso";
+      isoImage.volumeID = "SNOSU_RECOVERY";
+      isoImage.makeEfiBootable = true;
+      isoImage.makeBiosBootable = true;
+      isoImage.squashfsCompression = "zstd -Xcompression-level 19";
+
+      isoImage.grubTheme = config.boot.loader.grub.theme;
+
+      system.nixos.distroName = "";
+      system.nixos.label = "";
+      isoImage.prependToMenuLabel = "START HYPER RECOVERY (Debug)";
+      isoImage.appendToMenuLabel = "";
+
+      boot.kernelParams = lib.mkAfter [
+        "loglevel=7"
+        "systemd.log_level=debug"
+        "systemd.log_target=console"
+        "rd.debug"
+        "plymouth.debug"
+      ];
+
+      boot.initrd.kernelModules = [ "loop" "isofs" ];
+    };
+
+    image.modules.raw-efi = { lib, ... }: {
+      imports = [
+        "${inputs.nixpkgs}/nixos/modules/virtualisation/disk-image.nix"
+      ];
+
+      image.format = "raw";
+      image.efiSupport = true;
+      image.fileName = lib.mkDefault "snosu-hyper-recovery-x86_64-linux.img";
+    };
+
+    image.modules.qemu-efi = { lib, ... }: {
+      imports = [
+        "${inputs.nixpkgs}/nixos/modules/virtualisation/disk-image.nix"
+      ];
+
+      image.format = "qcow2";
+      image.efiSupport = true;
+      image.fileName = lib.mkDefault "snosu-hyper-recovery-x86_64-linux.qcow2";
+    };
   };
 }

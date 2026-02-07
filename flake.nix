@@ -3,14 +3,9 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-
-    nixos-generators = {
-      url = "github:nix-community/nixos-generators";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
-  outputs = { self, nixpkgs, nixos-generators, ... }@inputs:
+  outputs = { self, nixpkgs, ... }@inputs:
   let
     system = "x86_64-linux";
     pkgs = import nixpkgs { inherit system; };
@@ -20,6 +15,14 @@
 
     # Image Packaging Definitions
     packaging = import ./packaging.nix { inherit inputs; };
+
+    myOS = nixpkgs.lib.nixosSystem {
+      inherit system;
+      modules = [
+        payload
+        packaging.images
+      ];
+    };
   in
   {
     devShells.${system}.default = pkgs.mkShell {
@@ -28,38 +31,16 @@
 
     packages.${system} = {
       # 1. Standard ISO
-      iso = nixos-generators.nixosGenerate {
-        inherit system;
-        modules = [ packaging.iso ];
-        format = "install-iso";
-      };
+      iso = myOS.config.system.build.images.iso;
 
       # 2. Debug ISO
-      iso-debug = nixos-generators.nixosGenerate {
-        inherit system;
-        modules = [
-          packaging.iso
-          ({ lib, ... }: {
-            isoImage.isoName = lib.mkForce "snosu-hyper-recovery-debug-x86_64-linux.iso";
-            boot.kernelParams = [ "loglevel=7" "systemd.log_level=debug" "rd.debug" "plymouth.debug" ];
-          })
-        ];
-        format = "install-iso";
-      };
+      iso-debug = myOS.config.system.build.images.iso-debug;
 
       # 3. Raw USB Image (IMG)
-      usb = nixos-generators.nixosGenerate {
-        inherit system;
-        modules = [ payload ];
-        format = "raw-efi";
-      };
+      usb = myOS.config.system.build.images.raw-efi;
 
       # 4. VM Image (QCOW2)
-      vm = nixos-generators.nixosGenerate {
-        inherit system;
-        modules = [ payload ];
-        format = "qcow";
-      };
+      vm = myOS.config.system.build.images.qemu-efi;
 
       # Meta-package for CI to build everything
       images = pkgs.linkFarm "snosu-images" [

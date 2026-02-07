@@ -48,6 +48,7 @@ in
   # Core System Identity
   networking.hostName = "snosu-hyper-recovery";
   networking.hostId = "8425e349";
+  system.stateVersion = "25.05";
 
   # ZFS & Filesystems
   boot.supportedFilesystems = [ "zfs" "exfat" "vfat" ];
@@ -115,7 +116,14 @@ in
   ];
 
   # Auth
-  users.users.root.password = "nixos";
+  users.mutableUsers = false;
+  users.users.root = {
+    initialPassword = "nixos";
+    password = lib.mkForce null;
+    hashedPassword = lib.mkForce null;
+    hashedPasswordFile = lib.mkForce null;
+    initialHashedPassword = lib.mkForce null;
+  };
   services.openssh = {
     enable = true;
     settings.PermitRootLogin = "yes";
