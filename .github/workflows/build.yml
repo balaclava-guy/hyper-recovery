@@ -1,21 +1,17 @@
 name: Build Hypervisor ISO & USB
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
   check_suite:
     types: [ completed ]
   workflow_dispatch:
 
 jobs:
   build:
-    # Only run automatically on check_suite completion if it's the main branch,
-    # OR run on manual dispatch/push.
+    # Only run if it was the Garnix check suite and it succeeded.
+    # We remove push/pull_request to ensure it ONLY runs after Garnix.
     if: >
-      github.event_name != 'check_suite' ||
-      (github.event.check_suite.app.name == 'Garnix' && github.event.check_suite.conclusion != 'cancelled')
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.check_suite.app.name == 'Garnix' && github.event.check_suite.conclusion == 'success')
     runs-on: ubuntu-latest
     permissions:
       id-token: write
