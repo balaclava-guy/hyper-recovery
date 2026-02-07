@@ -148,7 +148,6 @@ in
   
   environment.systemPackages = with pkgs; [
     cockpit
-    cockpit-bridge
     cockpit-machines
     cockpit-zfs
     cockpit-files # File Manager for Cockpit
