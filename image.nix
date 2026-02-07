@@ -267,7 +267,7 @@ in
   system.nixos.distroName = "";
   system.nixos.label = "";
 
-  boot.loader.grub.memtest86.enable = false;
+  boot.loader.grub.memtest86.enable = lib.mkForce false;
 
   # Add custom GRUB entries for Drive 1/2 and Other
   # Note: 'boot.loader.grub.extraEntries' does NOT work for the ISO image itself, only installed system.

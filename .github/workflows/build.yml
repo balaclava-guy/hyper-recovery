@@ -31,9 +31,6 @@ jobs:
       with:
         use-flakehub: false
 
-    - name: Install 7z
-      run: sudo apt-get update && sudo apt-get install -y p7zip-full
-
     - name: Build ISO
       run: nix build .#iso --out-link result-iso
 
@@ -43,8 +40,8 @@ jobs:
     - name: Compress ISOs
       run: |
         mkdir -p dist
-        7z a -t7z -mx=9 dist/snosu-hyper-recovery-x86_64-linux.iso.7z result-iso/iso/*.iso
-        7z a -t7z -mx=9 dist/snosu-hyper-recovery-debug-x86_64-linux.iso.7z result-iso-debug/iso/*.iso
+        nix shell nixpkgs#p7zip --command 7z a -t7z -mx=9 dist/snosu-hyper-recovery-x86_64-linux.iso.7z result-iso/iso/*.iso
+        nix shell nixpkgs#p7zip --command 7z a -t7z -mx=9 dist/snosu-hyper-recovery-debug-x86_64-linux.iso.7z result-iso-debug/iso/*.iso
 
     - name: Upload ISO
       uses: actions/upload-artifact@v4
@@ -69,7 +66,7 @@ jobs:
     - name: Compress USB Image
       run: |
         mkdir -p dist
-        7z a -t7z -mx=9 dist/snosu-hyper-recovery-x86_64-linux.img.7z result-usb/usb/*.img
+        nix shell nixpkgs#p7zip --command 7z a -t7z -mx=9 dist/snosu-hyper-recovery-x86_64-linux.img.7z result-usb/usb/*.img
 
     - name: Upload USB Image
       uses: actions/upload-artifact@v4
