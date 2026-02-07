@@ -48,8 +48,7 @@ jobs:
     - name: Stage Artifacts
       run: |
         mkdir -p dist
-        shopt -s nullglob
-        files=(result-images-7z/*.7z)
+        mapfile -t files < <(find -L result-images-7z -type f -name "*.7z")
         if [ ${#files[@]} -eq 0 ]; then
           echo "No .7z artifacts produced in result-images-7z" >&2
           ls -la result-images-7z >&2
