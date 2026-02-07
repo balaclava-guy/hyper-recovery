@@ -151,6 +151,7 @@ in
     cockpit-bridge
     cockpit-machines
     cockpit-zfs
+    cockpit-files # File Manager for Cockpit
     qemu-utils
     virt-manager
     zfs
@@ -167,6 +168,7 @@ in
     efibootmgr
     wpa_supplicant
     dhcpcd
+    udisks # Required for Cockpit Storage tab
     
     (pkgs.writeShellScriptBin "import-proxmox-pools" ''
       #!/bin/sh
@@ -188,6 +190,9 @@ in
     127.0.0.1 localhost
     127.0.1.1 snosu-recovery
   '';
+
+  # Enable UDisks2 for Cockpit Storage management
+  services.udisks2.enable = true;
 
   # Nix Configuration
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
