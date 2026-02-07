@@ -198,42 +198,19 @@ in
     settings.PermitRootLogin = "yes";
   };
 
-  # ISO Specifics
-  # Maximize compression (slower build, smaller ISO)
-  isoImage.squashfsCompression = "zstd -Xcompression-level 19";
-
-  # Set the ISO filename
-  isoImage.isoName = "snosu-hyper-recovery-x86_64-linux.iso";
-  
-  # Use custom GRUB theme for the ISO bootloader
-  isoImage.grubTheme = snosuGrubTheme;
-  isoImage.splashImage = "${snosuGrubTheme}/background.png";
-  
-  # Ensure Plymouth works in the ISO initrd
+  # Ensure Plymouth works in the initrd
   boot.initrd.systemd.enable = true;
-  
-  # Rename the default installer entry
-  isoImage.prependToMenuLabel = "START HYPER RECOVERY";
-  isoImage.appendToMenuLabel = ""; # Clear default
-  
+
   # Note: The ISO generator uses 'system.nixos.distroName' + 'system.nixos.label' + appendToMenuLabel
   # We can try to override distroName to be empty or "Hyper Recovery"
   system.nixos.distroName = "Hyper Recovery";
   system.nixos.label = ""; # Clear version label if desired
-  
+
   # Add custom GRUB entries for Drive 1/2 and Other
   # Note: 'boot.loader.grub.extraEntries' does NOT work for the ISO image itself, only installed system.
   # The ISO generation logic is in 'nixos/modules/installer/cd-dvd/iso-image.nix'.
   # It doesn't easily support custom entries without forking the module.
-  # BUT, we can use 'isoImage.grubTheme' to style it, which we did.
-  
-  # Workaround: We can't easily change the structure of the ISO menu without patching nixpkgs.
-  # However, we can use 'isoImage.syslinuxTheme' for BIOS.
-  # For EFI (GRUB), we are stuck with the default layout unless we patch.
-  
-  # Let's try to use 'boot.loader.grub.extraEntries' just in case it gets picked up by some versions,
-  # or if we are talking about the installed system.
-  # But for the ISO, we might have to accept the default "NixOS Installer" or "START HYPER RECOVERY" (via label).
+  # BUT, we can use the ISO-specific module to style it.
   
   boot.loader.grub.extraEntries = ''
     menuentry "Boot from First Hard Disk" {
@@ -270,41 +247,4 @@ in
     themePackages = [ snosuPlymouthTheme ];
   };
 
-  # Syslinux Menu (BIOS)
-  isoImage.syslinuxTheme = lib.mkForce ''
-    DEFAULT boot
-    TIMEOUT 100
-    PROMPT 1
-    
-    UI menu.c32
-    
-    MENU TITLE Hypervisor OS Boot CD
-    
-    LABEL boot
-      MENU LABEL START HYPER RECOVERY
-      LINUX /boot/bzImage
-      APPEND init=${config.system.build.toplevel}/init ${toString config.boot.kernelParams} initrd=/boot/initrd
-
-    LABEL disk1
-      MENU LABEL Boot from First Hard Disk (hd0)
-      COM32 chain.c32
-      APPEND hd0
-      
-    LABEL disk2
-      MENU LABEL Boot from Second Hard Disk (hd1)
-      COM32 chain.c32
-      APPEND hd1
-      
-    MENU BEGIN Other
-      MENU TITLE Other Options
-      
-      LABEL reboot
-        MENU LABEL Reboot
-        COM32 reboot.c32
-        
-      LABEL poweroff
-        MENU LABEL Power Off
-        COM32 poweroff.c32
-    MENU END
-  '';
 }

@@ -28,6 +28,7 @@
         system = "x86_64-linux";
         modules = [
           ./image.nix
+          ./image-iso.nix
         ];
         format = "install-iso";
       };
