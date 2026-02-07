@@ -1,63 +1,74 @@
 {
-  description = "Minimalist Hypervisor OS Boot CD";
+  description = "Snosu Hyper Recovery Environment";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    
     nixos-generators = {
       url = "github:nix-community/nixos-generators";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  outputs = { self, nixpkgs, nixos-generators, ... }: let
-    pkgs = import nixpkgs { system = "x86_64-linux"; };
+  outputs = { self, nixpkgs, nixos-generators, ... }@inputs:
+  let
+    system = "x86_64-linux";
+    pkgs = import nixpkgs { inherit system; };
+    
+    # Common OS configuration (The Payload)
+    payload = ./payload.nix;
+
+    # Image Packaging Definitions
+    packaging = import ./packaging.nix { inherit inputs; };
+
   in
   {
-    devShells.x86_64-linux.default = pkgs.mkShell {
-      packages = [
-        pkgs.peazip
-      ];
+    devShells.${system}.default = pkgs.mkShell {
+      packages = [ pkgs.peazip pkgs.p7zip ];
     };
-    # Note: This defines an x86_64-linux ISO.
-    # If building on macOS (aarch64-darwin), you need a remote builder or linux-builder.
-    packages.x86_64-linux = let
-      usbImage = nixos-generators.nixosGenerate {
-        system = "x86_64-linux";
-        modules = [
-          ./image.nix
+
+    packages.${system} = {
+      # 1. Standard ISO
+      iso = nixos-generators.nixosGenerate {
+        inherit system;
+        modules = [ packaging.iso ];
+        format = "install-iso";
+      };
+
+      # 2. Debug ISO
+      iso-debug = nixos-generators.nixosGenerate {
+        inherit system;
+        modules = [ 
+          packaging.iso 
+          ({ lib, ... }: {
+            isoImage.isoName = lib.mkForce "snosu-hyper-recovery-debug-x86_64-linux.iso";
+            boot.kernelParams = [ "loglevel=7" "systemd.log_level=debug" "rd.debug" "plymouth.debug" ];
+          })
         ];
+        format = "install-iso";
+      };
+
+      # 3. Raw USB Image (IMG)
+      usb = nixos-generators.nixosGenerate {
+        inherit system;
+        modules = [ payload ];
         format = "raw-efi";
       };
-      isoImage = nixos-generators.nixosGenerate {
-        system = "x86_64-linux";
-        modules = [
-          ./image.nix
-          ./image-iso.nix
-        ];
-        format = "install-iso";
+
+      # 4. VM Image (QCOW2)
+      vm = nixos-generators.nixosGenerate {
+        inherit system;
+        modules = [ payload ];
+        format = "qcow";
       };
-      isoDebugImage = nixos-generators.nixosGenerate {
-        system = "x86_64-linux";
-        modules = [
-          ./image.nix
-          ./image-iso.nix
-          ./image-iso-debug.nix
-        ];
-        format = "install-iso";
-      };
-    in {
-      iso = pkgs.runCommand "snosu-hyper-recovery-iso" {} ''
-        mkdir -p $out/iso
-        ln -s ${isoImage}/iso/*.iso $out/iso/snosu-hyper-recovery-x86_64-linux.iso
-      '';
-      iso-debug = pkgs.runCommand "snosu-hyper-recovery-iso-debug" {} ''
-        mkdir -p $out/iso
-        ln -s ${isoDebugImage}/iso/*.iso $out/iso/snosu-hyper-recovery-debug-x86_64-linux.iso
-      '';
-      usb = pkgs.runCommand "snosu-hyper-recovery-raw-efi" {} ''
-        mkdir -p $out/usb
-        ln -s ${usbImage}/*.img $out/usb/snosu-hyper-recovery-x86_64-linux.img
-      '';
+
+      # Meta-package for CI to build everything
+      images = pkgs.linkFarm "snosu-images" [
+        { name = "iso"; path = self.packages.${system}.iso; }
+        { name = "iso-debug"; path = self.packages.${system}.iso-debug; }
+        { name = "usb"; path = self.packages.${system}.usb; }
+        { name = "vm"; path = self.packages.${system}.vm; }
+      ];
     };
   };
 }

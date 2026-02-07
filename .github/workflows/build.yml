@@ -27,21 +27,24 @@ jobs:
         swap-storage: true
 
     - uses: DeterminateSystems/nix-installer-action@v16
+      with:
+        extra-conf: |
+          substituters = https://cache.nixos.org https://cache.garnix.io
+          trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=
+
     - uses: DeterminateSystems/magic-nix-cache-action@v13
       with:
         use-flakehub: false
 
-    - name: Build ISO
-      run: nix build .#iso --out-link result-iso
+    - name: Build Images
+      run: nix build .#images --out-link result-images
 
-    - name: Build Debug ISO
-      run: nix build .#iso-debug --out-link result-iso-debug
-
-    - name: Compress ISOs
+    - name: Compress Artifacts
       run: |
         mkdir -p dist
-        nix shell nixpkgs#p7zip --command 7z a -t7z -mx=9 dist/snosu-hyper-recovery-x86_64-linux.iso.7z result-iso/iso/*.iso
-        nix shell nixpkgs#p7zip --command 7z a -t7z -mx=9 dist/snosu-hyper-recovery-debug-x86_64-linux.iso.7z result-iso-debug/iso/*.iso
+        nix shell nixpkgs#p7zip --command 7z a -t7z -mx=9 dist/snosu-hyper-recovery-x86_64-linux.iso.7z result-images/iso/iso/*.iso
+        nix shell nixpkgs#p7zip --command 7z a -t7z -mx=9 dist/snosu-hyper-recovery-debug-x86_64-linux.iso.7z result-images/iso-debug/iso/*.iso
+        nix shell nixpkgs#p7zip --command 7z a -t7z -mx=9 dist/snosu-hyper-recovery-x86_64-linux.img.7z result-images/usb/usb/*.img
 
     - name: Upload ISO
       uses: actions/upload-artifact@v4
@@ -56,17 +59,6 @@ jobs:
         name: snosu-hyper-recovery-iso-debug
         path: dist/snosu-hyper-recovery-debug-x86_64-linux.iso.7z
         if-no-files-found: error
-
-    - name: Free ISO Space
-      run: rm -rf result-iso result-iso-debug
-
-    - name: Build USB Image
-      run: nix build .#usb --out-link result-usb
-
-    - name: Compress USB Image
-      run: |
-        mkdir -p dist
-        nix shell nixpkgs#p7zip --command 7z a -t7z -mx=9 dist/snosu-hyper-recovery-x86_64-linux.img.7z result-usb/usb/*.img
 
     - name: Upload USB Image
       uses: actions/upload-artifact@v4

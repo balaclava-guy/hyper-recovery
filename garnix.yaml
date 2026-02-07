@@ -1,0 +1,9 @@
+builds:
+  exclude:
+    - "*.img"
+    - "*.qcow2"
+    - "*.iso"
+  # By default garnix builds all packages in the flake.
+  # We want it to build the 'images' linkFarm which includes everything.
+  include:
+    - packages.x86_64-linux.images
