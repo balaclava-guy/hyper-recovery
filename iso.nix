@@ -98,7 +98,8 @@ in
     qemu = {
       # Use a minimal QEMU package (host architecture only) to save ~300MB+
       package = pkgs.qemu_kvm;
-      runAsRoot = false;
+      # Run as root to ensure access to raw block devices (/dev/sdX)
+      runAsRoot = true;
       swtpm.enable = true;
     };
   };
@@ -111,6 +112,8 @@ in
       WebService = {
         AllowUnencrypted = true;
         Branding = "snosu";
+        # Explicitly allow root login
+        AllowRoot = true;
       };
     };
   };
@@ -145,8 +148,11 @@ in
   
   environment.systemPackages = with pkgs; [
     cockpit
+    cockpit-bridge
     cockpit-machines
     cockpit-zfs
+    qemu-utils
+    virt-manager
     zfs
     parted
     gptfdisk
@@ -177,6 +183,11 @@ in
   # Networking
   networking.networkmanager.enable = true;
   networking.firewall.enable = false;
+  networking.hostName = "snosu-recovery";
+  networking.extraHosts = ''
+    127.0.0.1 localhost
+    127.0.1.1 snosu-recovery
+  '';
 
   # Nix Configuration
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
