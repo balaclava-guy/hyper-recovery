@@ -191,6 +191,16 @@ in
   # ISO Specifics
   # Maximize compression (slower build, smaller ISO)
   isoImage.squashfsCompression = "zstd -Xcompression-level 19";
+
+  # Set the ISO filename
+  isoImage.isoName = "snosu-hyper-recovery-x86_64-linux.iso";
+  
+  # Use custom GRUB theme for the ISO bootloader
+  isoImage.grubTheme = snosuGrubTheme;
+  isoImage.splashImage = "${snosuGrubTheme}/background.png";
+  
+  # Ensure Plymouth works in the ISO initrd
+  boot.initrd.systemd.enable = true;
   
   # Rename the default installer entry
   isoImage.prependToMenuLabel = "START HYPER RECOVERY";
