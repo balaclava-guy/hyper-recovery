@@ -40,20 +40,25 @@ jobs:
         authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
     - name: Build ISO
-      run: nix build .#iso
+      run: nix build .#iso --out-link result-iso
 
     - name: Rename ISO
       run: |
         mkdir -p dist
-        cp result/iso/*.iso dist/snosu-hyper-recovery-x86_64-linux.iso
+        cp result-iso/iso/*.iso dist/snosu-hyper-recovery-x86_64-linux.iso
 
     - name: Build USB Image
-      run: nix build .#usb
+      run: nix build .#usb --out-link result-usb
 
     - name: Rename USB Image
       run: |
         mkdir -p dist
-        cp result/*.img dist/snosu-hyper-recovery-x86_64-linux.img || cp result/nixos.img dist/snosu-hyper-recovery-x86_64-linux.img
+        if ls result-usb/usb/*.img 1> /dev/null 2>&1; then
+          cp result-usb/usb/*.img dist/snosu-hyper-recovery-x86_64-linux.img
+        else
+          echo "No USB image found under result-usb/usb" >&2
+          exit 1
+        fi
 
     - name: Upload ISO
       uses: actions/upload-artifact@v4

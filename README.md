@@ -22,7 +22,7 @@ You need a system with Nix installed and Flakes enabled.
 nix build .#iso
 ```
 
-The resulting ISO will be in `result/iso/`.
+The resulting ISO will be in `result/iso/` (e.g. `result/iso/snosu-hyper-recovery-x86_64-linux.iso`).
 
 ### USB
 
@@ -34,8 +34,8 @@ This produces a signed `raw-efi` image that can be written directly to a flash d
 
 ## Writing the USB image with Etcher or Ventoy
 
-- **Etcher**: Pick `result/usb/raw-efi` as the source image, select the target drive, and flash following the usual validation prompts.
-- **Ventoy**: Copy the `raw-efi` image into the Ventoy partition and boot from the USB stick; Ventoy will present it in the boot menu.
+- **Etcher**: Pick `result/usb/snosu-hyper-recovery-x86_64-linux.img` as the source image, select the target drive, and flash following the usual validation prompts.
+- **Ventoy**: Copy `result/usb/snosu-hyper-recovery-x86_64-linux.img` into the Ventoy partition and boot from the USB stick; Ventoy will present it in the boot menu.
 
 ## Usage
 
