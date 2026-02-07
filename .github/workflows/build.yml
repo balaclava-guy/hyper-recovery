@@ -5,10 +5,17 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  check_suite:
+    types: [ completed ]
   workflow_dispatch:
 
 jobs:
   build:
+    # Only run automatically on check_suite completion if it's the main branch,
+    # OR run on manual dispatch/push.
+    if: >
+      github.event_name != 'check_suite' ||
+      (github.event.check_suite.app.name == 'Garnix' && github.event.check_suite.conclusion != 'cancelled')
     runs-on: ubuntu-latest
     permissions:
       id-token: write
