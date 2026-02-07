@@ -69,10 +69,14 @@
           exit 1
         fi
 
+        workdir=$(mktemp -d)
         while IFS= read -r file; do
           rel=$(realpath --relative-to="$images_root" "$file")
           safe_name=$(echo "$rel" | sed 's|/|__|g')
-          7z a -t7z -mx=9 "$out/''${safe_name}.7z" "$file"
+          base_name=$(basename "$file")
+          cp "$file" "$workdir/$base_name"
+          7z a -t7z -mx=9 "$out/''${safe_name}.7z" "$workdir/$base_name"
+          rm -f "$workdir/$base_name"
         done <<< "$files"
       '';
     };
