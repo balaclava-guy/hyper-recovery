@@ -23,8 +23,7 @@
         ];
         format = "raw-efi";
       };
-    in {
-      iso = nixos-generators.nixosGenerate {
+      isoImage = nixos-generators.nixosGenerate {
         system = "x86_64-linux";
         modules = [
           ./image.nix
@@ -32,9 +31,14 @@
         ];
         format = "install-iso";
       };
+    in {
+      iso = pkgs.runCommand "snosu-hyper-recovery-iso" {} ''
+        mkdir -p $out/iso
+        ln -s ${isoImage}/iso/*.iso $out/iso/snosu-hyper-recovery-x86_64-linux.iso
+      '';
       usb = pkgs.runCommand "snosu-hyper-recovery-raw-efi" {} ''
         mkdir -p $out/usb
-        ln -s ${usbImage} $out/usb/snosu-hyper-recovery-x86_64-linux.img
+        ln -s ${usbImage}/*.img $out/usb/snosu-hyper-recovery-x86_64-linux.img
       '';
     };
   };
