@@ -17,7 +17,7 @@ jobs:
     # We remove push/pull_request to ensure it ONLY runs after Garnix.
     if: >
       github.event_name == 'workflow_dispatch' ||
-      (github.event.check_suite.app.name == 'Garnix' && github.event.check_suite.conclusion == 'success')
+      (github.event.check_suite.app.slug == 'garnix-ci' && github.event.check_suite.conclusion == 'success')
     runs-on: ubuntu-latest
     permissions:
       id-token: write

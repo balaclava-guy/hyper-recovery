@@ -118,8 +118,8 @@ in
   # Auth
   users.mutableUsers = false;
   users.users.root = {
-    initialPassword = "nixos";
-    password = lib.mkForce null;
+    password = "nixos";
+    initialPassword = lib.mkForce null;
     hashedPassword = lib.mkForce null;
     hashedPasswordFile = lib.mkForce null;
     initialHashedPassword = lib.mkForce null;
