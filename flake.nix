@@ -19,7 +19,7 @@
       usbImage = nixos-generators.nixosGenerate {
         system = "x86_64-linux";
         modules = [
-          ./iso.nix
+          ./image.nix
         ];
         format = "raw-efi";
       };
@@ -27,7 +27,7 @@
       iso = nixos-generators.nixosGenerate {
         system = "x86_64-linux";
         modules = [
-          ./iso.nix
+          ./image.nix
         ];
         format = "install-iso";
       };

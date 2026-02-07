@@ -124,21 +124,16 @@ in
   environment.etc."cockpit/branding/snosu/apple-touch-icon.png".source = ./branding/snosu/logo.png;
   environment.etc."cockpit/branding/snosu/favicon.ico".source = ./branding/snosu/logo.png;
   
-  environment.etc."motd".text = ''
-    
-     ██████╗ ██╗   ██╗███████╗██████╗ ███████╗     ██╗███╗   ██╗██╗  ██╗███████╗██████╗ ███████╗
-    ██╔════╝ ██║   ██║██╔════╝██╔══██╗██╔════╝     ██║████╗  ██║██║ ██╔╝██╔════╝██╔══██╗██╔════╝
-    ██║  ███╗██║   ██║█████╗  ██████╔╝█████╗       ██║██╔██╗ ██║█████╔╝ █████╗  ██████╔╝█████╗  
-    ██║   ██║██║   ██║██╔══╝  ██╔══██╗██╔══╝       ██║██║╚██╗██║██╔═██╗ ██╔══╝  ██╔══██╗██╔══╝  
-    ╚██████╔╝╚██████╔╝███████╗██║  ██║███████╗     ██║██║ ╚████║██║  ██╗███████╗██║  ██║███████╗
-     ╚═════╝  ╚═════╝ ╚══════╝╚═╝  ╚═╝╚══════╝     ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚══════╝
-    
+  environment.etc."motd".text =
+    (builtins.readFile ./assets/motd-logo.ansi)
+    + ''
+
     Welcome to Snosu Hyper Recovery Environment
-    
+
     * Access the Web UI at: https://<IP>:9090
     * Default user: root / nixos
     * To start recovery, use the 'zpool import' command.
-    
+
   '';
   
   environment.etc."issue".text = ''
@@ -184,10 +179,10 @@ in
   # Networking
   networking.networkmanager.enable = true;
   networking.firewall.enable = false;
-  networking.hostName = "snosu-recovery";
+  networking.hostName = "snosu-hyper-recovery";
   networking.extraHosts = ''
     127.0.0.1 localhost
-    127.0.1.1 snosu-recovery
+    127.0.1.1 snosu-hyper-recovery snosu-hr
   '';
 
   # Enable UDisks2 for Cockpit Storage management
