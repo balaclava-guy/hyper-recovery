@@ -53,10 +53,10 @@ terminal-font: "Hyper Fighting Regular 16"
 # Navigation Hint
 + label {
     left = 15%
-    top = 90%
+    top = 88%
     width = 70%
     align = "center"
-    text = "Press Enter to boot, 'e' to edit commands"
+    text = "Enter: boot   e: edit   Debug ISO: adds full boot logging"
     font = "Hyper Fighting Regular 12"
     color = "#666666"
 }

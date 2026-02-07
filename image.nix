@@ -83,7 +83,7 @@ let
 in
 {
   # ZFS Support
-  boot.supportedFilesystems = [ "zfs" ];
+  boot.supportedFilesystems = [ "zfs" "exfat" "vfat" ];
   boot.zfs.forceImportRoot = false;
   networking.hostId = "8425e349";
 
@@ -217,6 +217,50 @@ in
 
   # Ensure Plymouth works in the initrd
   boot.initrd.systemd.enable = true;
+  boot.initrd.kernelModules = [ "loop" "isofs" ];
+
+  systemd.services.save-boot-logs = {
+    description = "Save boot logs to Ventoy USB";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "systemd-journald.service" "local-fs.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      TimeoutStartSec = "30";
+      ExecStart = pkgs.writeShellScript "save-boot-logs" ''
+        set -euo pipefail
+
+        labels=("VENTOY" "Ventoy" "ventoy")
+        device=""
+        for label in "''${labels[@]}"; do
+          if [ -e "/dev/disk/by-label/$label" ]; then
+            device="/dev/disk/by-label/$label"
+            break
+          fi
+        done
+
+        if [ -z "$device" ]; then
+          exit 0
+        fi
+
+        mkdir -p /mnt/ventoy
+        if ! mountpoint -q /mnt/ventoy; then
+          mount -o rw "$device" /mnt/ventoy || exit 0
+        fi
+
+        log_dir="/mnt/ventoy/boot-logs"
+        mkdir -p "$log_dir"
+
+        journalctl -b -o short-precise > "$log_dir/journal.txt" || true
+        dmesg -T > "$log_dir/dmesg.txt" || true
+
+        if [ -f /run/plymouth/plymouth-debug.log ]; then
+          cp /run/plymouth/plymouth-debug.log "$log_dir/plymouth-debug.log"
+        fi
+
+        sync
+      '';
+    };
+  };
 
   # Note: The ISO generator uses 'system.nixos.distroName' + 'system.nixos.label' + appendToMenuLabel
   # We can try to override distroName to be empty or "Hyper Recovery"

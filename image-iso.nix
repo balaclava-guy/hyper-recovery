@@ -1,6 +1,18 @@
 { lib, config, ... }:
 
-{
+let
+  debugKernelParams = config.boot.kernelParams ++ [
+    "loglevel=7"
+    "systemd.log_level=debug"
+    "systemd.log_target=console"
+    "systemd.journald.forward_to_console=yes"
+    "rd.systemd.show_status=1"
+    "rd.udev.log_level=debug"
+    "udev.log_priority=debug"
+    "rd.debug"
+    "plymouth.debug"
+  ];
+in {
   # ISO Specifics
   # Maximize compression (slower build, smaller ISO)
   isoImage.squashfsCompression = "zstd -Xcompression-level 19";
@@ -32,7 +44,12 @@
     LABEL boot
       MENU LABEL START HYPER RECOVERY
       LINUX /boot/bzImage
-      APPEND init=${config.system.build.toplevel}/init ${toString config.boot.kernelParams} initrd=/boot/initrd root=live:CDLABEL=SNOSU_RECOVERY
+      APPEND init=${config.system.build.toplevel}/init ${toString config.boot.kernelParams} initrd=/boot/initrd root=live:CDLABEL=${config.isoImage.volumeID}
+
+    LABEL debug
+      MENU LABEL START HYPER RECOVERY (Debug)
+      LINUX /boot/bzImage
+      APPEND init=${config.system.build.toplevel}/init ${toString debugKernelParams} initrd=/boot/initrd root=live:CDLABEL=${config.isoImage.volumeID}
 
     LABEL disk1
       MENU LABEL Boot from First Hard Disk (hd0)

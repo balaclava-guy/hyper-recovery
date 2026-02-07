@@ -31,10 +31,23 @@
         ];
         format = "install-iso";
       };
+      isoDebugImage = nixos-generators.nixosGenerate {
+        system = "x86_64-linux";
+        modules = [
+          ./image.nix
+          ./image-iso.nix
+          ./image-iso-debug.nix
+        ];
+        format = "install-iso";
+      };
     in {
       iso = pkgs.runCommand "snosu-hyper-recovery-iso" {} ''
         mkdir -p $out/iso
         ln -s ${isoImage}/iso/*.iso $out/iso/snosu-hyper-recovery-x86_64-linux.iso
+      '';
+      iso-debug = pkgs.runCommand "snosu-hyper-recovery-iso-debug" {} ''
+        mkdir -p $out/iso
+        ln -s ${isoDebugImage}/iso/*.iso $out/iso/snosu-hyper-recovery-debug-x86_64-linux.iso
       '';
       usb = pkgs.runCommand "snosu-hyper-recovery-raw-efi" {} ''
         mkdir -p $out/usb

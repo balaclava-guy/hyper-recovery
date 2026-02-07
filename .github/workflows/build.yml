@@ -29,6 +29,9 @@ jobs:
     - name: Build ISO
       run: nix build .#iso --out-link result-iso
 
+    - name: Build Debug ISO
+      run: nix build .#iso-debug --out-link result-iso-debug
+
     - name: Upload ISO
       uses: actions/upload-artifact@v4
       with:
@@ -36,8 +39,15 @@ jobs:
         path: result-iso/iso/*.iso
         if-no-files-found: error
 
+    - name: Upload Debug ISO
+      uses: actions/upload-artifact@v4
+      with:
+        name: snosu-hyper-recovery-iso-debug
+        path: result-iso-debug/iso/*.iso
+        if-no-files-found: error
+
     - name: Free ISO Space
-      run: rm -rf result-iso
+      run: rm -rf result-iso result-iso-debug
 
     - name: Build USB Image
       run: nix build .#usb --out-link result-usb
