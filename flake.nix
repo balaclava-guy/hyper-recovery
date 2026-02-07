@@ -13,6 +13,11 @@
     pkgs = import nixpkgs { system = "x86_64-linux"; };
   in
   {
+    devShells.x86_64-linux.default = pkgs.mkShell {
+      packages = [
+        pkgs.peazip
+      ];
+    };
     # Note: This defines an x86_64-linux ISO.
     # If building on macOS (aarch64-darwin), you need a remote builder or linux-builder.
     packages.x86_64-linux = let

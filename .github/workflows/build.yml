@@ -31,24 +31,33 @@ jobs:
       with:
         use-flakehub: false
 
+    - name: Install 7z
+      run: sudo apt-get update && sudo apt-get install -y p7zip-full
+
     - name: Build ISO
       run: nix build .#iso --out-link result-iso
 
     - name: Build Debug ISO
       run: nix build .#iso-debug --out-link result-iso-debug
 
+    - name: Compress ISOs
+      run: |
+        mkdir -p dist
+        7z a -t7z -mx=9 dist/snosu-hyper-recovery-x86_64-linux.iso.7z result-iso/iso/*.iso
+        7z a -t7z -mx=9 dist/snosu-hyper-recovery-debug-x86_64-linux.iso.7z result-iso-debug/iso/*.iso
+
     - name: Upload ISO
       uses: actions/upload-artifact@v4
       with:
         name: snosu-hyper-recovery-iso
-        path: result-iso/iso/*.iso
+        path: dist/snosu-hyper-recovery-x86_64-linux.iso.7z
         if-no-files-found: error
 
     - name: Upload Debug ISO
       uses: actions/upload-artifact@v4
       with:
         name: snosu-hyper-recovery-iso-debug
-        path: result-iso-debug/iso/*.iso
+        path: dist/snosu-hyper-recovery-debug-x86_64-linux.iso.7z
         if-no-files-found: error
 
     - name: Free ISO Space
@@ -57,9 +66,14 @@ jobs:
     - name: Build USB Image
       run: nix build .#usb --out-link result-usb
 
+    - name: Compress USB Image
+      run: |
+        mkdir -p dist
+        7z a -t7z -mx=9 dist/snosu-hyper-recovery-x86_64-linux.img.7z result-usb/usb/*.img
+
     - name: Upload USB Image
       uses: actions/upload-artifact@v4
       with:
         name: snosu-hyper-recovery-usb
-        path: result-usb/usb/*.img
+        path: dist/snosu-hyper-recovery-x86_64-linux.img.7z
         if-no-files-found: error

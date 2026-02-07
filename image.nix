@@ -264,8 +264,10 @@ in
 
   # Note: The ISO generator uses 'system.nixos.distroName' + 'system.nixos.label' + appendToMenuLabel
   # We can try to override distroName to be empty or "Hyper Recovery"
-  system.nixos.distroName = "Hyper Recovery";
-  system.nixos.label = ""; # Clear version label if desired
+  system.nixos.distroName = "";
+  system.nixos.label = "";
+
+  boot.loader.grub.memtest86.enable = false;
 
   # Add custom GRUB entries for Drive 1/2 and Other
   # Note: 'boot.loader.grub.extraEntries' does NOT work for the ISO image itself, only installed system.

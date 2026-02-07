@@ -1,18 +1,6 @@
 { lib, config, ... }:
 
-let
-  debugKernelParams = config.boot.kernelParams ++ [
-    "loglevel=7"
-    "systemd.log_level=debug"
-    "systemd.log_target=console"
-    "systemd.journald.forward_to_console=yes"
-    "rd.systemd.show_status=1"
-    "rd.udev.log_level=debug"
-    "udev.log_priority=debug"
-    "rd.debug"
-    "plymouth.debug"
-  ];
-in {
+{
   # ISO Specifics
   # Maximize compression (slower build, smaller ISO)
   isoImage.squashfsCompression = "zstd -Xcompression-level 19";
@@ -23,6 +11,10 @@ in {
   # Set Volume ID for reliable booting
   isoImage.volumeID = "SNOSU_RECOVERY";
 
+  # Prefer themed GRUB menu (UEFI only)
+  isoImage.makeEfiBootable = true;
+  isoImage.makeBiosBootable = false;
+
   # Use custom GRUB theme for the ISO bootloader
   isoImage.grubTheme = config.boot.loader.grub.theme;
   isoImage.splashImage = config.boot.loader.grub.splashImage;
@@ -30,47 +22,4 @@ in {
   # Rename the default installer entry
   isoImage.prependToMenuLabel = "START HYPER RECOVERY";
   isoImage.appendToMenuLabel = ""; # Clear default
-
-  # Syslinux Menu (BIOS)
-  isoImage.syslinuxTheme = lib.mkForce ''
-    DEFAULT boot
-    TIMEOUT 100
-    PROMPT 1
-
-    UI menu.c32
-
-    MENU TITLE Hypervisor OS Boot CD
-
-    LABEL boot
-      MENU LABEL START HYPER RECOVERY
-      LINUX /boot/bzImage
-      APPEND init=${config.system.build.toplevel}/init ${toString config.boot.kernelParams} initrd=/boot/initrd root=live:CDLABEL=${config.isoImage.volumeID}
-
-    LABEL debug
-      MENU LABEL START HYPER RECOVERY (Debug)
-      LINUX /boot/bzImage
-      APPEND init=${config.system.build.toplevel}/init ${toString debugKernelParams} initrd=/boot/initrd root=live:CDLABEL=${config.isoImage.volumeID}
-
-    LABEL disk1
-      MENU LABEL Boot from First Hard Disk (hd0)
-      COM32 chain.c32
-      APPEND hd0
-
-    LABEL disk2
-      MENU LABEL Boot from Second Hard Disk (hd1)
-      COM32 chain.c32
-      APPEND hd1
-
-    MENU BEGIN Other
-      MENU TITLE Other Options
-
-      LABEL reboot
-        MENU LABEL Reboot
-        COM32 reboot.c32
-
-      LABEL poweroff
-        MENU LABEL Power Off
-        COM32 poweroff.c32
-    MENU END
-  '';
 }
