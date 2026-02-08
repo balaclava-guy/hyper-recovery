@@ -169,6 +169,7 @@ in
     "udev.log_priority=3" 
     "vt.global_cursor_default=0"
     "plymouth.ignore-serial-consoles"  # Prevent serial console interference
+    "iwlwifi.power_save=0"
   ];
   
   # Suppress console messages during boot (for Plymouth)
@@ -197,6 +198,16 @@ in
   # Performance & Space Optimizations
   documentation.enable = false;
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
+  nixpkgs.config.allowUnfree = true;
+
+  # Firmware & wireless
+  hardware.enableAllFirmware = true;
+  hardware.firmware = with pkgs; [ linux-firmware ];
+  hardware.wirelessRegulatoryDatabase = true;
+
+  # Networking
+  networking.networkmanager.enable = true;
+  services.dhcpcd.enable = false;
 
   # Virtualization Stack
   virtualisation.libvirtd = {
@@ -241,6 +252,8 @@ in
     qemu-utils virt-manager zfs parted gptfdisk htop vim git
     pciutils usbutils smartmontools nvme-cli os-prober efibootmgr
     wpa_supplicant dhcpcd udisks2
+    networkmanager  # nmcli
+    iw
     hyperDebugScript  # Debug capture script - run 'hyper-debug'
     plymouth          # For Plymouth debugging
   ];

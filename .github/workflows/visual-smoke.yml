@@ -23,7 +23,7 @@ jobs:
       - name: Install QEMU + Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 qemu-utils socat imagemagick ffmpeg
+          sudo apt-get install -y qemu-system-x86 qemu-utils socat imagemagick ffmpeg ovmf
 
       - name: Build ISO
         run: |
@@ -38,72 +38,102 @@ jobs:
 
           mkdir -p artifacts
 
-          qemu-system-x86_64 \
-            -m 2048 -smp 2 \
-            -device virtio-gpu-pci \
-            -display none \
-            -vnc :1 \
-            -serial file:artifacts/serial.log \
-            -monitor unix:/tmp/qemu-monitor,server,nowait \
-            -cdrom "$ISO_PATH" \
-            -boot d \
-            -no-reboot &
+          VIDEO_SECONDS=60
 
-          QEMU_PID=$!
+          run_boot() {
+            local mode=$1
+            local vnc_port=$2
+            local monitor_socket=$3
+            local serial_log=$4
+            local prefix=$5
+            shift 5
+            local firmware_args=("$@")
 
-          # Wait for monitor socket
-          for i in {1..30}; do
-            if [ -S /tmp/qemu-monitor ]; then
-              break
+            qemu-system-x86_64 \
+              -m 2048 -smp 2 \
+              -device virtio-gpu-pci \
+              -display none \
+              -vnc :"$vnc_port" \
+              -serial file:"$serial_log" \
+              -monitor unix:"$monitor_socket",server,nowait \
+              -cdrom "$ISO_PATH" \
+              -boot d \
+              -no-reboot \
+              "${firmware_args[@]}" &
+
+            QEMU_PID=$!
+
+            # Wait for monitor socket
+            for i in {1..30}; do
+              if [ -S "$monitor_socket" ]; then
+                break
+              fi
+              sleep 1
+            done
+
+            # Wait for VNC port
+            for i in {1..30}; do
+              if (echo > /dev/tcp/127.0.0.1/$((5900 + vnc_port))) >/dev/null 2>&1; then
+                break
+              fi
+              sleep 1
+            done
+
+            # Start low-FPS recording (entire boot window)
+            ffmpeg -y -f vnc -i 127.0.0.1:"$vnc_port" -r 5 -t "$VIDEO_SECONDS" "artifacts/${prefix}-boot.mp4" -loglevel error &
+            FFMPEG_PID=$!
+
+            capture_shot() {
+              local name=$1
+              printf "screendump artifacts/%s.ppm\n" "$name" | socat - UNIX-CONNECT:"$monitor_socket"
+              convert "artifacts/$name.ppm" "artifacts/$name.png"
+            }
+
+            sleep 6
+            capture_shot "${prefix}-shot1"
+            sleep 6
+            capture_shot "${prefix}-shot2"
+            sleep 8
+            capture_shot "${prefix}-shot3"
+
+            # Let the recording finish the full duration
+            remaining=$((VIDEO_SECONDS - 20))
+            if [ "$remaining" -gt 0 ]; then
+              sleep "$remaining"
             fi
-            sleep 1
-          done
 
-          # Wait for VNC port
-          for i in {1..30}; do
-            if (echo > /dev/tcp/127.0.0.1/5901) >/dev/null 2>&1; then
-              break
+            # Brightness check (fail if all shots are nearly black)
+            mean1=$(convert "artifacts/${prefix}-shot1.png" -colorspace gray -format "%[mean]" info:)
+            mean2=$(convert "artifacts/${prefix}-shot2.png" -colorspace gray -format "%[mean]" info:)
+            mean3=$(convert "artifacts/${prefix}-shot3.png" -colorspace gray -format "%[mean]" info:)
+
+            echo "$mode shot means: $mean1 $mean2 $mean3"
+
+            is_bright=$(awk -v m1="$mean1" -v m2="$mean2" -v m3="$mean3" 'BEGIN {print ((m1>0.02)||(m2>0.02)||(m3>0.02)) ? 1 : 0}')
+            if [ "$is_bright" -ne 1 ]; then
+              echo "$mode screenshots are too dark. Plymouth may be missing."
+              exit 1
             fi
-            sleep 1
-          done
 
-          # Start low-FPS recording
-          ffmpeg -y -f vnc -i 127.0.0.1:1 -r 5 -t 25 artifacts/boot.mp4 -loglevel error &
-          FFMPEG_PID=$!
+            # Wait for recording to complete
+            wait "$FFMPEG_PID" || true
 
-          capture_shot() {
-            local name=$1
-            printf "screendump artifacts/%s.ppm\n" "$name" | socat - UNIX-CONNECT:/tmp/qemu-monitor
-            convert "artifacts/$name.ppm" "artifacts/$name.png"
+            # Shutdown QEMU
+            printf "system_powerdown\n" | socat - UNIX-CONNECT:"$monitor_socket" || true
+            sleep 3
+            kill "$QEMU_PID" || true
           }
 
-          sleep 6
-          capture_shot shot1
-          sleep 6
-          capture_shot shot2
-          sleep 8
-          capture_shot shot3
+          # BIOS boot test
+          run_boot "bios" 1 /tmp/qemu-monitor-bios artifacts/serial-bios.log bios
 
-          # Brightness check (fail if all shots are nearly black)
-          mean1=$(convert artifacts/shot1.png -colorspace gray -format "%[mean]" info:)
-          mean2=$(convert artifacts/shot2.png -colorspace gray -format "%[mean]" info:)
-          mean3=$(convert artifacts/shot3.png -colorspace gray -format "%[mean]" info:)
-
-          echo "shot means: $mean1 $mean2 $mean3"
-
-          is_bright=$(awk -v m1="$mean1" -v m2="$mean2" -v m3="$mean3" 'BEGIN {print ((m1>0.02)||(m2>0.02)||(m3>0.02)) ? 1 : 0}')
-          if [ "$is_bright" -ne 1 ]; then
-            echo "All screenshots are too dark. Plymouth may be missing."
-            exit 1
-          fi
-
-          # Shutdown QEMU
-          printf "system_powerdown\n" | socat - UNIX-CONNECT:/tmp/qemu-monitor || true
-          sleep 3
-          kill "$QEMU_PID" || true
-
-          # Stop recording
-          kill "$FFMPEG_PID" || true
+          # EFI boot test
+          EFI_CODE="/usr/share/OVMF/OVMF_CODE.fd"
+          EFI_VARS="/tmp/OVMF_VARS.fd"
+          cp /usr/share/OVMF/OVMF_VARS.fd "$EFI_VARS"
+          run_boot "efi" 2 /tmp/qemu-monitor-efi artifacts/serial-efi.log efi \
+            -drive if=pflash,format=raw,readonly=on,file="$EFI_CODE" \
+            -drive if=pflash,format=raw,file="$EFI_VARS"
 
       - name: Upload visual artifacts
         if: always()
@@ -111,9 +141,14 @@ jobs:
         with:
           name: visual-smoke
           path: |
-            artifacts/shot1.png
-            artifacts/shot2.png
-            artifacts/shot3.png
-            artifacts/boot.mp4
-            artifacts/serial.log
+            artifacts/bios-shot1.png
+            artifacts/bios-shot2.png
+            artifacts/bios-shot3.png
+            artifacts/bios-boot.mp4
+            artifacts/serial-bios.log
+            artifacts/efi-shot1.png
+            artifacts/efi-shot2.png
+            artifacts/efi-shot3.png
+            artifacts/efi-boot.mp4
+            artifacts/serial-efi.log
           if-no-files-found: warn
