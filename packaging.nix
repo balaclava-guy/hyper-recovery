@@ -6,7 +6,7 @@
       "${inputs.nixpkgs}/nixos/modules/image/images.nix"
     ];
 
-    image.modules = lib.mkForce {
+    image.modules = {
       iso = { lib, config, ... }: {
         imports = [
           "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
