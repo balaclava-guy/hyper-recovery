@@ -121,7 +121,7 @@
       };
 
       # VM image for testing (EFI only)
-      qemu-efi = { lib, ... }: {
+      qemu-efi = { lib, pkgs, config, ... }: {
         imports = [
           "${inputs.nixpkgs}/nixos/modules/virtualisation/disk-image.nix"
         ];
@@ -129,6 +129,15 @@
         image.format = "qcow2";
         image.efiSupport = true;
         image.fileName = lib.mkDefault "snosu-hyper-recovery-x86_64-linux.qcow2";
+
+        # Increase ESP size to avoid initrd/kernel overflow on /boot
+        system.build.image = lib.mkForce (import "${inputs.nixpkgs}/nixos/lib/make-disk-image.nix" {
+          inherit lib config pkgs;
+          inherit (config.virtualisation) diskSize;
+          inherit (config.image) baseName format;
+          partitionTableType = if config.image.efiSupport then "efi" else "legacy";
+          bootSize = "512M";
+        });
       };
     };
   };
