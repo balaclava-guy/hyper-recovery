@@ -70,21 +70,34 @@
           exit 1
         fi
 
-        # Compress each file individually and place directly in $out
+        # Process each file and normalize names for CI stability
         while IFS= read -r file; do
           if [ -z "$file" ]; then continue; fi
           
           base_name=$(basename "$file")
-          echo "Compressing $base_name with 7zz..."
-          # -mx=9: Ultra compression (LZMA2)
-          # -mmt: Multi-threading
-          # -ms=on: Solid compression (better for many small files, though these are large single files)
-          7zz a -t7z -mx=9 -mmt -ms=on "$out/''${base_name}.7z" "$file"
           
-          echo "Created $out/''${base_name}.7z"
+          # Determine standardized output name based on content
+          if [[ "$base_name" == *"debug"* && "$base_name" == *".iso" ]]; then
+            out_name="hyper-recovery-debug.iso.7z"
+          elif [[ "$base_name" == *".iso" ]]; then
+            out_name="hyper-recovery-live.iso.7z"
+          elif [[ "$base_name" == *".qcow2" ]]; then
+            out_name="hyper-recovery-vm.qcow2.7z"
+          else
+            # Fallback for anything else (shouldn't happen with current setup)
+            out_name="''${base_name}.7z"
+          fi
+          
+          echo "Compressing $base_name -> $out_name..."
+          
+          # Compress with 7zz
+          # -mx=9: We keep high compression for the *artifact container* (the .7z file)
+          # because this runs on the build runner, not inside the booted OS.
+          # The "Invalid argument" error comes from the internal ISO squashfs, not this .7z.
+          7zz a -t7z -mx=9 -mmt -ms=on "$out/$out_name" "$file"
         done <<< "$files"
         
-        echo "Compression complete. Artifacts:"
+        echo "Compression complete. Normalized Artifacts:"
         ls -lh $out/
       '';
     };
