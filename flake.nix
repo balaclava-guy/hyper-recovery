@@ -54,6 +54,11 @@
       images-7z =
         let
           images = myOS.config.system.build.images;
+          # Evaluate file paths at Nix evaluation time
+          isoPath = "${images.iso}/${images.iso.passthru.filePath}";
+          isoDebugPath = "${images.iso-debug}/${images.iso-debug.passthru.filePath}";
+          rawPath = "${images.raw-efi}/${images.raw-efi.passthru.filePath}";
+          qcow2Path = "${images.qemu-efi}/${images.qemu-efi.passthru.filePath}";
         in
         pkgs.runCommand "snosu-hyper-recovery-images-7z" {
           nativeBuildInputs = [ pkgs.p7zip pkgs.coreutils ];
@@ -62,24 +67,16 @@
           mkdir -p $out
 
           # ISO
-          if [ -f "${images.iso}/${images.iso.passthru.filePath}" ]; then
-            7z a -t7z -mx=9 "$out/snosu-hyper-recovery-x86_64-linux.iso.7z" "${images.iso}/${images.iso.passthru.filePath}"
-          fi
+          7z a -t7z -mx=9 "$out/snosu-hyper-recovery-x86_64-linux.iso.7z" "${isoPath}"
 
           # Debug ISO
-          if [ -f "${images.iso-debug}/${images.iso-debug.passthru.filePath}" ]; then
-            7z a -t7z -mx=9 "$out/snosu-hyper-recovery-debug-x86_64-linux.iso.7z" "${images.iso-debug}/${images.iso-debug.passthru.filePath}"
-          fi
+          7z a -t7z -mx=9 "$out/snosu-hyper-recovery-debug-x86_64-linux.iso.7z" "${isoDebugPath}"
 
           # Raw USB Image
-          if [ -f "${images.raw-efi}/${images.raw-efi.passthru.filePath}" ]; then
-            7z a -t7z -mx=9 "$out/snosu-hyper-recovery-x86_64-linux.img.7z" "${images.raw-efi}/${images.raw-efi.passthru.filePath}"
-          fi
+          7z a -t7z -mx=9 "$out/snosu-hyper-recovery-x86_64-linux.img.7z" "${rawPath}"
 
           # QCOW2 VM Image
-          if [ -f "${images.qemu-efi}/${images.qemu-efi.passthru.filePath}" ]; then
-            7z a -t7z -mx=9 "$out/snosu-hyper-recovery-x86_64-linux.qcow2.7z" "${images.qemu-efi}/${images.qemu-efi.passthru.filePath}"
-          fi
+          7z a -t7z -mx=9 "$out/snosu-hyper-recovery-x86_64-linux.qcow2.7z" "${qcow2Path}"
         '';
     };
   };
