@@ -23,7 +23,7 @@ jobs:
       - name: Install QEMU + Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 qemu-utils socat imagemagick ovmf
+          sudo apt-get install -y qemu-system-x86 qemu-utils socat imagemagick ovmf ffmpeg
           # Verify OVMF path
           ls -la /usr/share/OVMF/ || ls -la /usr/share/ovmf/ || ls -la /usr/share/edk2/
           echo "OVMF files found at:"
@@ -123,8 +123,15 @@ jobs:
               sleep 1
             done
 
-            # Note: VNC video recording disabled (ffmpeg vnc support not available)
-            # Screenshots are sufficient for visual regression testing
+            # Start frame capture loop for video creation (runs in background)
+            (
+              mkdir -p "artifacts/${prefix}-frames"
+              for i in {0..150}; do  # Capture ~30 seconds at 5 FPS
+                printf "screendump artifacts/${prefix}-frames/frame%04d.ppm\n" "$i" | socat - UNIX-CONNECT:"$monitor_socket" 2>/dev/null || true
+                sleep 0.2  # 5 FPS
+              done
+            ) &
+            CAPTURE_PID=$!
 
             capture_shot() {
               local name=$1
@@ -168,6 +175,15 @@ jobs:
             printf "system_powerdown\n" | socat - UNIX-CONNECT:"$monitor_socket" || true
             sleep 3
             kill "$QEMU_PID" || true
+            kill "$CAPTURE_PID" 2>/dev/null || true
+            
+            # Convert captured frames to video
+            if [ -d "artifacts/${prefix}-frames" ] && [ "$(ls -A artifacts/${prefix}-frames/*.ppm 2>/dev/null | wc -l)" -gt 0 ]; then
+              ffmpeg -y -framerate 5 -pattern_type glob -i "artifacts/${prefix}-frames/*.ppm" \
+                -vcodec libx264 -preset fast -crf 23 -pix_fmt yuv420p \
+                "artifacts/${prefix}-boot.mp4" 2>/dev/null || echo "Video creation failed for $mode"
+              rm -rf "artifacts/${prefix}-frames"  # Clean up frames
+            fi
           }
 
           # BIOS boot test (main ISO)
@@ -196,5 +212,6 @@ jobs:
             artifacts/bios-shot*.png
             artifacts/efi-shot*.png
             artifacts/debug-efi-shot*.png
+            artifacts/*-boot.mp4
             artifacts/serial-*.log
           if-no-files-found: warn
