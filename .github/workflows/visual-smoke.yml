@@ -1,0 +1,119 @@
+name: Visual Smoke Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  visual-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            substituters = https://cache.nixos.org https://cache.garnix.io
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=
+
+      - name: Install QEMU + Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 qemu-utils socat imagemagick ffmpeg
+
+      - name: Build ISO
+        run: |
+          nix build .#packages.x86_64-linux.usb --out-link result-iso --print-build-logs --refresh
+          ISO_PATH=$(ls result-iso/iso/*.iso | head -1)
+          echo "ISO_PATH=$ISO_PATH" >> $GITHUB_ENV
+
+      - name: Boot ISO and capture visuals
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p artifacts
+
+          qemu-system-x86_64 \
+            -m 2048 -smp 2 \
+            -device virtio-gpu-pci \
+            -display none \
+            -vnc :1 \
+            -serial file:artifacts/serial.log \
+            -monitor unix:/tmp/qemu-monitor,server,nowait \
+            -cdrom "$ISO_PATH" \
+            -boot d \
+            -no-reboot &
+
+          QEMU_PID=$!
+
+          # Wait for monitor socket
+          for i in {1..30}; do
+            if [ -S /tmp/qemu-monitor ]; then
+              break
+            fi
+            sleep 1
+          done
+
+          # Wait for VNC port
+          for i in {1..30}; do
+            if (echo > /dev/tcp/127.0.0.1/5901) >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+
+          # Start low-FPS recording
+          ffmpeg -y -f vnc -i 127.0.0.1:1 -r 5 -t 25 artifacts/boot.mp4 -loglevel error &
+          FFMPEG_PID=$!
+
+          capture_shot() {
+            local name=$1
+            printf "screendump artifacts/%s.ppm\n" "$name" | socat - UNIX-CONNECT:/tmp/qemu-monitor
+            convert "artifacts/$name.ppm" "artifacts/$name.png"
+          }
+
+          sleep 6
+          capture_shot shot1
+          sleep 6
+          capture_shot shot2
+          sleep 8
+          capture_shot shot3
+
+          # Brightness check (fail if all shots are nearly black)
+          mean1=$(convert artifacts/shot1.png -colorspace gray -format "%[mean]" info:)
+          mean2=$(convert artifacts/shot2.png -colorspace gray -format "%[mean]" info:)
+          mean3=$(convert artifacts/shot3.png -colorspace gray -format "%[mean]" info:)
+
+          echo "shot means: $mean1 $mean2 $mean3"
+
+          is_bright=$(awk -v m1="$mean1" -v m2="$mean2" -v m3="$mean3" 'BEGIN {print ((m1>0.02)||(m2>0.02)||(m3>0.02)) ? 1 : 0}')
+          if [ "$is_bright" -ne 1 ]; then
+            echo "All screenshots are too dark. Plymouth may be missing."
+            exit 1
+          fi
+
+          # Shutdown QEMU
+          printf "system_powerdown\n" | socat - UNIX-CONNECT:/tmp/qemu-monitor || true
+          sleep 3
+          kill "$QEMU_PID" || true
+
+          # Stop recording
+          kill "$FFMPEG_PID" || true
+
+      - name: Upload visual artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-smoke
+          path: |
+            artifacts/shot1.png
+            artifacts/shot2.png
+            artifacts/shot3.png
+            artifacts/boot.mp4
+            artifacts/serial.log
+          if-no-files-found: warn
