@@ -62,7 +62,7 @@
 
   boot.initrd.systemd = {
     enable = true;
-    initrdBin = [ pkgs.coreutils pkgs.util-linux ];
+    initrdBin = [ pkgs.coreutils pkgs.util-linux-minimal ];
     services.initrd-logdump = {
       description = "Dump initrd logs to Ventoy";
       wantedBy = [ "initrd.target" ];
