@@ -45,8 +45,12 @@ jobs:
 
           mkdir -p artifacts
 
-          # Find OVMF firmware files (try both naming conventions)
-          OVMF_CODE=$(find /usr/share -name "OVMF_CODE*.fd" 2>/dev/null | grep -v snakeoil | grep -v ms | head -1)
+          # Find OVMF firmware files (prefer non-secureboot for compatibility)
+          OVMF_CODE=$(find /usr/share -name "OVMF_CODE*.fd" 2>/dev/null | grep -v snakeoil | grep -v ms | grep -v secboot | head -1)
+          if [ -z "$OVMF_CODE" ]; then
+            # Fall back to secureboot version if needed
+            OVMF_CODE=$(find /usr/share -name "OVMF_CODE*.fd" 2>/dev/null | grep -v snakeoil | grep -v ms | head -1)
+          fi
           OVMF_VARS_TEMPLATE=$(find /usr/share -name "OVMF_VARS*.fd" 2>/dev/null | grep -v snakeoil | grep -v ms | head -1)
           echo "Using OVMF_CODE: $OVMF_CODE"
           echo "Using OVMF_VARS template: $OVMF_VARS_TEMPLATE"
@@ -70,17 +74,36 @@ jobs:
             shift 6
             local firmware_args=("$@")
 
-            qemu-system-x86_64 \
-              -m 2048 -smp 2 \
-              -device virtio-gpu-pci \
-              -display none \
-              -vnc :"$vnc_port" \
-              -serial file:"$serial_log" \
-              -monitor unix:"$monitor_socket",server,nowait \
-              -cdrom "$iso_path" \
-              -boot d \
-              -no-reboot \
-              "${firmware_args[@]}" &
+            # For EFI boot, use -drive instead of -cdrom for better compatibility
+            if [ -n "${firmware_args[*]}" ]; then
+              # EFI mode - use drive format for ISO
+              qemu-system-x86_64 \
+                -m 2048 -smp 2 \
+                -device virtio-gpu-pci \
+                -display none \
+                -vnc :"$vnc_port" \
+                -serial file:"$serial_log" \
+                -monitor unix:"$monitor_socket",server,nowait \
+                -drive file="$iso_path",format=raw,if=none,id=drive-cd,readonly=on \
+                -device ahci,id=ahci \
+                -device ide-cd,drive=drive-cd,bus=ahci.0 \
+                -boot order=d \
+                -no-reboot \
+                "${firmware_args[@]}" &
+            else
+              # BIOS mode - use simple cdrom
+              qemu-system-x86_64 \
+                -m 2048 -smp 2 \
+                -device virtio-gpu-pci \
+                -display none \
+                -vnc :"$vnc_port" \
+                -serial file:"$serial_log" \
+                -monitor unix:"$monitor_socket",server,nowait \
+                -cdrom "$iso_path" \
+                -boot d \
+                -no-reboot \
+                "${firmware_args[@]}" &
+            fi
 
             QEMU_PID=$!
 
