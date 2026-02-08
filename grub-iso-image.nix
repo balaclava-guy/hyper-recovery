@@ -378,18 +378,36 @@ in
     );
 
     # Override the ISO build to use GRUB for BIOS boot
+    # We use a custom ISO builder that replaces the /isolinux sort-weight with /boot/grub
     system.build.isoImage = lib.mkForce (
-      pkgs.callPackage "${pkgs.path}/nixos/lib/make-iso9660-image.nix" {
-        inherit (config.isoImage) compressImage volumeID;
-        contents = config.isoImage.contents;
+      let
+        needSquashfs = config.isoImage.storeContents != [ ];
+        makeSquashfsDrv = pkgs.callPackage "${pkgs.path}/nixos/lib/make-squashfs.nix" {
+          storeContents = config.isoImage.storeContents;
+          comp = config.isoImage.squashfsCompression;
+        };
+      in
+      pkgs.stdenv.mkDerivation {
+        name = "${config.image.baseName}.iso";
+        __structuredAttrs = true;
+
+        # the image will be self-contained so we can drop references
+        # to the closure that was used to build it
+        unsafeDiscardReferences.out = true;
+
+        buildCommandPath = ./make-grub-iso-image.sh;
+        nativeBuildInputs = [
+          pkgs.xorriso
+          pkgs.zstd
+          pkgs.libossp_uuid
+        ] ++ lib.optionals needSquashfs makeSquashfsDrv.nativeBuildInputs;
+
         isoName = "${config.image.baseName}.iso";
+        inherit (config.isoImage) compressImage volumeID;
 
         # BIOS boot via GRUB El Torito image
         bootable = config.isoImage.makeBiosBootable;
         bootImage = "/boot/grub/eltorito.img";
-
-        # We don't need syslinux anymore
-        syslinux = null;
 
         # USB hybrid boot via GRUB's boot_hybrid.img
         usbBootable = config.isoImage.makeUsbBootable && config.isoImage.makeBiosBootable;
@@ -399,9 +417,16 @@ in
         efiBootable = config.isoImage.makeEfiBootable;
         efiBootImage = "boot/efi.img";
 
-        # Squashfs for the Nix store
-        squashfsContents = config.isoImage.storeContents;
-        squashfsCompression = config.isoImage.squashfsCompression;
+        sources = map (x: x.source) config.isoImage.contents;
+        targets = map (x: x.target) config.isoImage.contents;
+
+        objects = [];
+        symlinks = [];
+
+        squashfsCommand = lib.optionalString needSquashfs makeSquashfsDrv.buildCommand;
+
+        # For obtaining the closure of `storeContents'.
+        closureInfo = pkgs.closureInfo { rootPaths = []; };
       }
     );
 
