@@ -45,14 +45,16 @@ jobs:
 
           mkdir -p artifacts
 
-          # Find OVMF firmware files
-          OVMF_CODE=$(find /usr/share -name "OVMF_CODE.fd" 2>/dev/null | head -1)
-          OVMF_VARS_TEMPLATE=$(find /usr/share -name "OVMF_VARS.fd" 2>/dev/null | head -1)
+          # Find OVMF firmware files (try both naming conventions)
+          OVMF_CODE=$(find /usr/share -name "OVMF_CODE*.fd" 2>/dev/null | grep -v snakeoil | grep -v ms | head -1)
+          OVMF_VARS_TEMPLATE=$(find /usr/share -name "OVMF_VARS*.fd" 2>/dev/null | grep -v snakeoil | grep -v ms | head -1)
           echo "Using OVMF_CODE: $OVMF_CODE"
           echo "Using OVMF_VARS template: $OVMF_VARS_TEMPLATE"
 
           if [ -z "$OVMF_CODE" ] || [ -z "$OVMF_VARS_TEMPLATE" ]; then
             echo "ERROR: OVMF firmware files not found"
+            echo "Available OVMF files:"
+            find /usr/share -name "OVMF*.fd" 2>/dev/null || true
             exit 1
           fi
 
