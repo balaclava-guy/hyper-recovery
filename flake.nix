@@ -75,9 +75,11 @@
           if [ -z "$file" ]; then continue; fi
           
           base_name=$(basename "$file")
+          parent_dir=$(basename "$(dirname "$file")")
           
-          # Determine standardized output name based on content
-          if [[ "$base_name" == *"debug"* && "$base_name" == *".iso" ]]; then
+          # Determine standardized output name based on parent directory and file type
+          # The linkFarm creates usb/, usb-debug/, vm/ directories
+          if [[ "$parent_dir" == *"debug"* ]]; then
             out_name="hyper-recovery-debug.iso.7z"
           elif [[ "$base_name" == *".iso" ]]; then
             out_name="hyper-recovery-live.iso.7z"
@@ -88,7 +90,7 @@
             out_name="''${base_name}.7z"
           fi
           
-          echo "Compressing $base_name -> $out_name..."
+          echo "Compressing $parent_dir/$base_name -> $out_name..."
           
           # Compress with 7zz
           # -mx=9: We keep high compression for the *artifact container* (the .7z file)
