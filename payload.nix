@@ -1,6 +1,85 @@
 { config, pkgs, lib, ... }:
 
 let
+  # Debug capture script - run 'hyper-debug' to collect diagnostics
+  hyperDebugScript = pkgs.writeShellScriptBin "hyper-debug" ''
+    #!/usr/bin/env bash
+    set +e
+    
+    OUT_DIR="/tmp/hyper-debug-$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$OUT_DIR"
+    
+    echo "Collecting system diagnostics to $OUT_DIR ..."
+    
+    # Basic system info
+    echo "=== System Info ===" > "$OUT_DIR/system-info.txt"
+    date >> "$OUT_DIR/system-info.txt"
+    uname -a >> "$OUT_DIR/system-info.txt"
+    cat /etc/os-release >> "$OUT_DIR/system-info.txt" 2>/dev/null
+    cat /proc/cmdline >> "$OUT_DIR/system-info.txt"
+    
+    # Block devices
+    echo "=== Block Devices ===" > "$OUT_DIR/block-devices.txt"
+    lsblk -a -o NAME,KNAME,SIZE,FSTYPE,LABEL,UUID,MOUNTPOINTS >> "$OUT_DIR/block-devices.txt" 2>&1
+    echo "" >> "$OUT_DIR/block-devices.txt"
+    blkid >> "$OUT_DIR/block-devices.txt" 2>&1
+    echo "" >> "$OUT_DIR/block-devices.txt"
+    ls -la /dev/disk/by-label/ >> "$OUT_DIR/block-devices.txt" 2>&1
+    
+    # Mounts
+    findmnt -a > "$OUT_DIR/mounts.txt" 2>&1
+    
+    # Systemd status
+    systemctl --failed > "$OUT_DIR/systemd-failed.txt" 2>&1
+    systemctl status > "$OUT_DIR/systemd-status.txt" 2>&1
+    
+    # Plymouth status
+    echo "=== Plymouth ===" > "$OUT_DIR/plymouth.txt"
+    plymouth --ping 2>&1 && echo "Plymouth daemon: RUNNING" >> "$OUT_DIR/plymouth.txt" || echo "Plymouth daemon: NOT RUNNING" >> "$OUT_DIR/plymouth.txt"
+    plymouth-set-default-theme --list >> "$OUT_DIR/plymouth.txt" 2>&1
+    echo "Current theme: $(plymouth-set-default-theme)" >> "$OUT_DIR/plymouth.txt" 2>&1
+    ls -la /run/plymouth/ >> "$OUT_DIR/plymouth.txt" 2>&1
+    cat /etc/plymouth/plymouthd.conf >> "$OUT_DIR/plymouth.txt" 2>&1
+    
+    # Kernel messages
+    dmesg -T > "$OUT_DIR/dmesg.txt" 2>&1 || dmesg > "$OUT_DIR/dmesg.txt" 2>&1
+    
+    # Journal
+    journalctl -b --no-pager > "$OUT_DIR/journal.txt" 2>&1
+    journalctl -b -u plymouth* --no-pager > "$OUT_DIR/journal-plymouth.txt" 2>&1
+    
+    # Graphics/DRM info
+    echo "=== Graphics ===" > "$OUT_DIR/graphics.txt"
+    ls -la /dev/dri/ >> "$OUT_DIR/graphics.txt" 2>&1
+    cat /sys/class/drm/*/status >> "$OUT_DIR/graphics.txt" 2>&1
+    lspci -k | grep -A3 -i vga >> "$OUT_DIR/graphics.txt" 2>&1
+    
+    echo "Diagnostics collected in: $OUT_DIR"
+    echo ""
+    
+    # Try to copy to Ventoy
+    VENTOY_MNT=""
+    for label in Ventoy VENTOY ventoy; do
+      if [ -e "/dev/disk/by-label/$label" ]; then
+        VENTOY_MNT="/mnt/ventoy-debug"
+        mkdir -p "$VENTOY_MNT"
+        if mount -o rw "/dev/disk/by-label/$label" "$VENTOY_MNT" 2>/dev/null; then
+          DEST="$VENTOY_MNT/hyper-recovery-debug"
+          mkdir -p "$DEST"
+          cp -r "$OUT_DIR"/* "$DEST/"
+          sync
+          echo "Also copied to Ventoy USB: $DEST"
+          umount "$VENTOY_MNT" 2>/dev/null || true
+        fi
+        break
+      fi
+    done
+    
+    echo ""
+    echo "To view: ls $OUT_DIR"
+    echo "To copy via SSH: scp -r root@<IP>:$OUT_DIR ."
+  '';
+
   # 1. Snosu Plymouth Theme Package
   snosuPlymouthTheme = pkgs.stdenv.mkDerivation {
     pname = "snosu-hyper-recovery-plymouth";
@@ -61,6 +140,7 @@ let
       grub-mkfont -s 14 -o $out/undefined_medium_14.pf2 $fontSrc
       grub-mkfont -s 16 -o $out/undefined_medium_16.pf2 $fontSrc
       grub-mkfont -s 24 -o $out/undefined_medium_24.pf2 $fontSrc
+      grub-mkfont -s 28 -o $out/undefined_medium_28.pf2 $fontSrc
       
       sed -i 's/Hyper Street Fighter 2 Regular/Undefined Medium/g' $out/theme.txt
       sed -i 's/Hyper Fighting Regular/Undefined Medium/g' $out/theme.txt
@@ -75,7 +155,7 @@ in
   system.stateVersion = "25.05";
 
   # ZFS & Filesystems
-  boot.supportedFilesystems = [ "zfs" "exfat" "vfat" ];
+  boot.supportedFilesystems = [ "zfs" "exfat" "vfat" "iso9660" "squashfs" "overlay" ];
   boot.zfs.forceImportRoot = false;
   
   # Kernel & Hardware
@@ -83,12 +163,17 @@ in
   boot.kernelParams = [ 
     "quiet" 
     "splash" 
-    "loglevel=3" 
+    "loglevel=0"                    # Suppress all but critical messages
     "rd.systemd.show_status=false" 
     "rd.udev.log_level=3" 
     "udev.log_priority=3" 
     "vt.global_cursor_default=0"
+    "plymouth.ignore-serial-consoles"  # Prevent serial console interference
   ];
+  
+  # Suppress console messages during boot (for Plymouth)
+  boot.consoleLogLevel = 0;
+  boot.initrd.verbose = false;
   
   # KMS drivers for Plymouth (critical for boot splash to work)
   # AND storage drivers for boot (critical for finding root device)
@@ -104,6 +189,9 @@ in
     "usb_storage" # USB Mass Storage
     "sd_mod"      # SCSI/SATA disks
     "sr_mod"      # CD-ROMs
+    "isofs"       # ISO9660 for live media
+    "squashfs"    # SquashFS root
+    "overlay"     # OverlayFS for live root
   ];
 
   # Performance & Space Optimizations
@@ -153,6 +241,8 @@ in
     qemu-utils virt-manager zfs parted gptfdisk htop vim git
     pciutils usbutils smartmontools nvme-cli os-prober efibootmgr
     wpa_supplicant dhcpcd udisks2
+    hyperDebugScript  # Debug capture script - run 'hyper-debug'
+    plymouth          # For Plymouth debugging
   ];
 
   # Auth
@@ -175,7 +265,7 @@ in
   # Boot Branding
   boot.initrd.systemd.enable = true;
   boot.plymouth = {
-    enable = true;
+    enable = lib.mkForce true;
     theme = "snosu-hyper-recovery";
     themePackages = [ snosuPlymouthTheme ];
   };
