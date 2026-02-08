@@ -50,7 +50,7 @@
 
       # Compressed artifacts - individual 7z files (one per image)
       images-7z = pkgs.runCommand "snosu-hyper-recovery-images-7z" {
-        nativeBuildInputs = [ pkgs.p7zip pkgs.findutils pkgs.coreutils ];
+        nativeBuildInputs = [ pkgs._7zz pkgs.findutils pkgs.coreutils ];
       } ''
         set -euo pipefail
         mkdir -p $out
@@ -70,20 +70,29 @@
           exit 1
         fi
 
-        # Compress each file individually and place directly in $out
+        # Process each file
         while IFS= read -r file; do
           if [ -z "$file" ]; then continue; fi
           
           base_name=$(basename "$file")
-          echo "Compressing $base_name..."
+          extension="''${base_name##*.}"
           
-          # Compress directly from source to output (no intermediate copy)
-          7z a -t7z -mx=9 "$out/''${base_name}.7z" "$file"
-          
-          echo "Created $out/''${base_name}.7z"
+          if [[ "$extension" == "iso" ]]; then
+            # ISOs are already compressed (SquashFS) and ready for DD.
+            # Skip double compression to save time and give user immediate access.
+            echo "Copying $base_name directly (no extra compression)..."
+            cp "$file" "$out/$base_name"
+          else
+            # Compress other formats (qcow2, raw, etc) to save space
+            echo "Compressing $base_name with 7zz (modern)..."
+            # -mx=9: Ultra compression
+            # -mmt: Multi-threading (default in 7zz)
+            7zz a -t7z -mx=9 -mmt "$out/''${base_name}.7z" "$file"
+            echo "Created $out/''${base_name}.7z"
+          fi
         done <<< "$files"
         
-        echo "Compression complete. Artifacts:"
+        echo "Processing complete. Artifacts:"
         ls -lh $out/
       '';
     };
