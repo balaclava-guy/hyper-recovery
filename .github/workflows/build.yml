@@ -52,6 +52,9 @@ jobs:
           # Find .7z files in the result symlink
           find -L result-artifacts -name "*.7z" -exec cp {} dist/ \;
           
+          echo "Contents of dist/:"
+          ls -lh dist/
+          
           count=$(ls dist/*.7z 2>/dev/null | wc -l)
           if [ "$count" -eq 0 ]; then
             echo "::error::No .7z artifacts found in build result!"
@@ -67,7 +70,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: live-iso
-          path: dist/snosu-hyper-recovery-x86_64-linux.iso.7z
+          path: dist/*hyper-recovery-x86_64-linux.iso.7z
           if-no-files-found: error
           compression-level: 0
           retention-days: 90
@@ -76,7 +79,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: debug-iso
-          path: dist/snosu-hyper-recovery-debug-x86_64-linux.iso.7z
+          path: dist/*hyper-recovery-debug-x86_64-linux.iso.7z
           if-no-files-found: ignore
           compression-level: 0
           retention-days: 90
