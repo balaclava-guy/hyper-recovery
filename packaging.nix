@@ -7,36 +7,60 @@
     ];
 
     image.modules = {
+      # Hybrid BIOS/EFI USB image using ISO format
+      # Modern ISO images are designed for USB deployment with dd or Ventoy
+      # They include hybrid MBR for BIOS and ESP for EFI in one image
       usb-live = { lib, pkgs, config, ... }: {
         imports = [
-          "${inputs.nixpkgs}/nixos/modules/virtualisation/disk-image.nix"
+          "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
         ];
 
-        image.fileName = lib.mkDefault "snosu-hyper-recovery-x86_64-linux.img";
-        image.format = "raw";
-        image.baseName = "snosu-hyper-recovery";
+        # Hybrid boot configuration - works on both BIOS and EFI systems
+        isoImage.makeEfiBootable = true;      # EFI boot via GRUB
+        isoImage.makeBiosBootable = true;     # BIOS boot via syslinux
+        isoImage.makeUsbBootable = true;      # Hybrid MBR for USB drives
         
-        # Enable EFI support for GPT partition table with ESP
-        image.efiSupport = true;
+        # Image metadata
+        isoImage.volumeID = "HYPER_RECOVERY";
+        image.fileName = lib.mkDefault "snosu-hyper-recovery-x86_64-linux.iso";
         
-        # Note: disk-image.nix handles partitioning and filesystems
-        # It creates: GPT table, ESP partition, root partition
-        # GRUB is installed for EFI by default when efiSupport = true
-        # For hybrid BIOS boot, we rely on GRUB's configuration in payload.nix
+        # Use GRUB theme from payload.nix
+        isoImage.grubTheme = config.boot.loader.grub.theme;
         
-        # Filesystem and boot support for USB devices
-        boot.initrd.kernelModules = [ "usb_storage" "uas" "sd_mod" ];
+        # Compression for smaller file size
+        isoImage.squashfsCompression = "zstd -Xcompression-level 19";
+        
+        # Clean boot menu labels
+        system.nixos.distroName = "";
+        system.nixos.label = "";
+        isoImage.prependToMenuLabel = "START HYPER RECOVERY";
+        isoImage.appendToMenuLabel = "";
+        
+        # USB/CD-ROM kernel modules
+        boot.initrd.kernelModules = [ "loop" "isofs" "usb_storage" "uas" "sd_mod" ];
       };
 
+      # Debug variant with verbose logging
       usb-live-debug = { lib, pkgs, config, ... }: {
         imports = [
-          "${inputs.nixpkgs}/nixos/modules/virtualisation/disk-image.nix"
+          "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
         ];
 
-        image.fileName = lib.mkDefault "snosu-hyper-recovery-debug-x86_64-linux.img";
-        image.format = "raw";
-        image.baseName = "snosu-hyper-recovery-debug";
-        image.efiSupport = true;
+        # Same hybrid boot setup
+        isoImage.makeEfiBootable = true;
+        isoImage.makeBiosBootable = true;
+        isoImage.makeUsbBootable = true;
+        
+        isoImage.volumeID = "HYPER_RECOVERY_DEBUG";
+        image.fileName = lib.mkDefault "snosu-hyper-recovery-debug-x86_64-linux.iso";
+        
+        isoImage.grubTheme = config.boot.loader.grub.theme;
+        isoImage.squashfsCompression = "zstd -Xcompression-level 19";
+        
+        system.nixos.distroName = "";
+        system.nixos.label = "";
+        isoImage.prependToMenuLabel = "START HYPER RECOVERY (Debug)";
+        isoImage.appendToMenuLabel = "";
 
         # Debug kernel parameters
         boot.kernelParams = lib.mkForce [
@@ -48,9 +72,10 @@
           "splash"
         ];
 
-        boot.initrd.kernelModules = [ "usb_storage" "uas" "sd_mod" ];
+        boot.initrd.kernelModules = [ "loop" "isofs" "usb_storage" "uas" "sd_mod" ];
       };
 
+      # VM image for testing (EFI only)
       qemu-efi = { lib, ... }: {
         imports = [
           "${inputs.nixpkgs}/nixos/modules/virtualisation/disk-image.nix"

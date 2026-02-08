@@ -28,15 +28,21 @@ Hyper Recovery is **not** a traditional live CD installer. It's a **portable hyp
 
 You need a system with Nix installed and Flakes enabled.
 
-### USB Live Image (Hybrid BIOS/EFI)
+### Hybrid USB Image (ISO format)
 
 ```bash
 nix build .#usb
 ```
 
-This produces a hybrid bootable image in `result/` that supports both BIOS and EFI boot modes.
+This produces a hybrid bootable ISO in `result/iso/` designed for USB deployment. Despite the `.iso` extension, this is a modern hybrid image that:
+- Supports **both BIOS and EFI boot**
+- Can be written directly to USB with `dd`
+- Works with Ventoy
+- Includes hybrid MBR for legacy systems
 
-### USB Live Image (Debug variant)
+The "ISO" format is the industry standard for bootable USB images (used by SystemRescue, Clonezilla, NixOS installer, etc.).
+
+### Debug Variant
 
 ```bash
 nix build .#usb-debug
@@ -68,31 +74,32 @@ nix build .#images-7z     # Individual .7z files for each image
 lsblk  # Linux
 diskutil list  # macOS
 
-# Write the image (CAUTION: This will erase the USB drive!)
-sudo dd if=result/snosu-hyper-recovery-x86_64-linux.img of=/dev/sdX bs=4M status=progress
+# Write the ISO to USB (CAUTION: This will erase the USB drive!)
+sudo dd if=result/iso/snosu-hyper-recovery-x86_64-linux.iso of=/dev/sdX bs=4M status=progress
 sudo sync
 ```
 
 ### Using Etcher (All platforms)
 
 1. Download [balenaEtcher](https://www.balena.io/etcher/)
-2. Select `result/snosu-hyper-recovery-x86_64-linux.img`
+2. Select `result/iso/snosu-hyper-recovery-x86_64-linux.iso`
 3. Select your USB drive
 4. Flash!
 
 ### Using Ventoy (Recommended for multi-boot USB)
 
 1. Install [Ventoy](https://www.ventoy.net/) on your USB drive
-2. Copy `result/snosu-hyper-recovery-x86_64-linux.img` to the Ventoy partition
+2. Copy `result/iso/snosu-hyper-recovery-x86_64-linux.iso` to the Ventoy partition
 3. Boot from the USB - Ventoy will present it in the boot menu
 4. Works in both BIOS and EFI modes automatically
 
 ## Boot Modes
 
-The USB image supports **hybrid boot**:
-- **BIOS/Legacy mode**: Uses GRUB installed to MBR and BIOS boot partition
+The ISO image is a **hybrid boot image** designed for USB:
+- **BIOS/Legacy mode**: Uses syslinux/isolinux bootloader with hybrid MBR
 - **UEFI mode**: Uses GRUB installed to ESP at `/EFI/BOOT/bootx64.efi`
-- **Ventoy**: Chainloads GRUB configuration from either boot mode
+- **Ventoy**: Chainloads from either boot mode automatically
+- **Works when dd'd to USB** or booted from Ventoy
 
 ## Usage
 
@@ -122,4 +129,4 @@ The system includes a custom Plymouth theme. If it doesn't display:
 
 - **BIOS mode not working**: Ensure the USB is bootable in legacy mode in BIOS settings
 - **EFI mode not working**: Try disabling Secure Boot in UEFI settings
-- **Ventoy not detecting**: Ensure the `.img` file is in the root of the Ventoy partition
+- **Ventoy not detecting**: Ensure the `.iso` file is in the root of the Ventoy partition

@@ -30,13 +30,15 @@
     };
 
     packages.${system} = {
-      # 1. USB Live Image (Hybrid BIOS/EFI)
+      # 1. USB Live Image (Hybrid BIOS/EFI ISO)
+      # Note: Modern ISOs are hybrid images designed for USB deployment
+      # Can be written to USB with dd or booted via Ventoy
       usb = myOS.config.system.build.images.usb-live;
 
-      # 2. USB Live Image (Debug variant)
+      # 2. USB Live Image (Debug variant with verbose logging)
       usb-debug = myOS.config.system.build.images.usb-live-debug;
 
-      # 3. VM Image (QCOW2)
+      # 3. VM Image (QCOW2 for testing)
       vm = myOS.config.system.build.images.qemu-efi;
 
       # Meta-package for CI to build everything
@@ -55,9 +57,9 @@
 
         images_root="${self.packages.${system}.images}"
         
-        # Find all image files
+        # Find all image files (including ISO for hybrid USB images)
         files=$(find -L "$images_root" -type f \( \
-          -name "*.img" -o -name "*.qcow2" -o -name "*.qcow" \
+          -name "*.iso" -o -name "*.img" -o -name "*.qcow2" -o -name "*.qcow" \
           -o -name "*.raw" -o -name "*.vmdk" -o -name "*.vhd" -o -name "*.vhdx" \
         \) || true)
 
