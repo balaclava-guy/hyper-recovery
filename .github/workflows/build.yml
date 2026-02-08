@@ -56,7 +56,7 @@ jobs:
     needs: check-garnix
     if: needs.check-garnix.outputs.garnix_success == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10  # Fail fast if cache fetch is slow
+    timeout-minutes: 30  # Allow time for potential local build fallback
     steps:
     - uses: actions/checkout@v4
 
@@ -66,40 +66,47 @@ jobs:
           substituters = https://cache.nixos.org https://cache.garnix.io
           trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=
 
+    - name: Wait for Garnix Cache Propagation
+      run: |
+        echo "::notice title=Cache Sync::Waiting 30 seconds for Garnix to propagate artifacts to cache..."
+        echo "Garnix build completed, allowing time for cache sync..."
+        sleep 30
+
     - name: Fetch Compressed Artifacts from Garnix
       id: fetch
-      timeout-minutes: 8  # Individual step timeout
+      timeout-minutes: 15  # Increased timeout for potential local build
       run: |
         echo "::notice title=Fetching from Garnix::Attempting to download pre-built artifacts from Garnix cache..."
         
-        # Try Garnix cache first (strict mode - no building allowed)
-        if nix build .#images-7z --out-link result-images-7z \
+        # Try Garnix cache first (with short timeout)
+        if timeout 180 nix build .#images-7z --out-link result-images-7z \
           --option substituters "https://cache.garnix.io" \
           --option trusted-public-keys "cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=" \
-          --option fallback false 2>&1 | tee /tmp/garnix-fetch.log; then
+          --option fallback false \
+          --max-jobs 0 2>&1 | tee /tmp/garnix-fetch.log; then
           
           echo "✅ Successfully fetched from Garnix cache!" | tee -a $GITHUB_STEP_SUMMARY
           echo "cache_source=garnix" >> $GITHUB_OUTPUT
         else
-          echo "::warning title=Garnix Cache Failed::Garnix cache fetch failed, falling back to cache.nixos.org"
-          echo "❌ Garnix cache fetch failed. Error:" | tee -a $GITHUB_STEP_SUMMARY
-          tail -20 /tmp/garnix-fetch.log | tee -a $GITHUB_STEP_SUMMARY
-          
+          echo "::warning title=Garnix Cache Miss::Garnix cache not available yet (may still be building)"
+          echo "❌ Garnix cache not available. This is normal for new commits." | tee -a $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "🔄 Falling back to cache.nixos.org..." >> $GITHUB_STEP_SUMMARY
+          echo "**Note**: Garnix may still be building this commit. Check https://garnix.io/repo/${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔄 Falling back to NixOS cache + local build..." >> $GITHUB_STEP_SUMMARY
           
-          # Fall back to NixOS cache
+          # Fall back to NixOS cache, but ALLOW local building as last resort
           nix build .#images-7z --out-link result-images-7z \
-            --option substituters "https://cache.nixos.org" \
-            --option trusted-public-keys "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" \
-            --option fallback false
+            --option substituters "https://cache.nixos.org https://cache.garnix.io" \
+            --option trusted-public-keys "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=" \
+            --print-build-logs
           
-          echo "✅ Successfully fetched from cache.nixos.org" | tee -a $GITHUB_STEP_SUMMARY
-          echo "cache_source=nixos" >> $GITHUB_OUTPUT
+          echo "✅ Build completed (some components may have been built locally)" | tee -a $GITHUB_STEP_SUMMARY
+          echo "cache_source=nixos-or-local" >> $GITHUB_OUTPUT
         fi
         
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "## Fetched Artifacts" >> $GITHUB_STEP_SUMMARY
+        echo "## Artifacts Ready" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "**Source**: \`$(cat $GITHUB_OUTPUT | grep cache_source | cut -d= -f2)\`" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
