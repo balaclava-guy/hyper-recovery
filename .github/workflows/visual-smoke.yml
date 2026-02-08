@@ -126,7 +126,7 @@ jobs:
             # Start frame capture loop for video creation (runs in background)
             (
               mkdir -p "artifacts/${prefix}-frames"
-              for i in {0..150}; do  # Capture ~30 seconds at 5 FPS
+              for i in {0..300}; do  # Capture ~60 seconds at 5 FPS
                 printf "screendump artifacts/${prefix}-frames/frame%04d.ppm\n" "$i" | socat - UNIX-CONNECT:"$monitor_socket" 2>/dev/null || true
                 sleep 0.2  # 5 FPS
               done
@@ -141,17 +141,17 @@ jobs:
 
             # Extended screenshot timing to capture Plymouth boot animation
             # GRUB auto-boots after ~5s, then kernel loads, then Plymouth runs
-            sleep 3
+            sleep 5
             capture_shot "${prefix}-shot1"  # GRUB menu
-            sleep 5
-            capture_shot "${prefix}-shot2"  # Kernel loading / early Plymouth
-            sleep 5
-            capture_shot "${prefix}-shot3"  # Plymouth animation
-            sleep 5
-            capture_shot "${prefix}-shot4"  # Plymouth animation continues
-            sleep 5
-            capture_shot "${prefix}-shot5"  # Late Plymouth / login screen
             sleep 10
+            capture_shot "${prefix}-shot2"  # Kernel loading / early Plymouth
+            sleep 10
+            capture_shot "${prefix}-shot3"  # Plymouth animation
+            sleep 10
+            capture_shot "${prefix}-shot4"  # Plymouth animation continues
+            sleep 10
+            capture_shot "${prefix}-shot5"  # Late Plymouth / login screen
+            sleep 15
             capture_shot "${prefix}-shot6"  # Post-boot / login screen
 
             # Brightness check across all screenshots
