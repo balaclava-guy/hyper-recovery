@@ -315,9 +315,17 @@ in
   };
 
   # Ensure the virtio GPU DRM device exists during initrd so Plymouth can start.
-  boot.initrd.postDeviceCommands = lib.mkAfter ''
-    modprobe virtio_gpu || true
-  '';
+  boot.initrd.systemd.services.modprobe-virtio-gpu = {
+    description = "Load virtio_gpu early for Plymouth";
+    wantedBy = [ "sysinit.target" ];
+    after = [ "systemd-udev-trigger.service" ];
+    before = [ "plymouth-start.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "${pkgs.kmod}/bin/modprobe virtio_gpu";
+      RemainAfterExit = true;
+    };
+  };
 
   boot.loader.grub = {
     enable = true;
