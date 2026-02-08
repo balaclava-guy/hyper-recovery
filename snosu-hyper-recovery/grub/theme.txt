@@ -9,18 +9,18 @@ terminal-font: "Hyper Fighting Regular 16"
 # Logo (Left Side)
 + image {
     file = "logo.png"
-    left = 2%
-    top = 18%
-    width = 34%
-    height = 45%
+    left = 0%
+    top = 10%
+    width = 48%
+    height = 80%
 }
 
 # Boot Menu (Right Side)
 + boot_menu {
-    left = 58%
-    width = 38%
-    top = 25%
-    height = 50%
+    left = 52%
+    width = 46%
+    top = 22%
+    height = 56%
     item_font = "Hyper Fighting Regular 28"
     item_color = "#cfcfcf"
     selected_item_font = "Hyper Fighting Regular 28"
@@ -28,16 +28,16 @@ terminal-font: "Hyper Fighting Regular 16"
     selected_item_pixmap_style = "blob_*.png"
     icon_width = 32
     icon_height = 32
-    item_height = 52
-    item_spacing = 24
+    item_height = 50
+    item_spacing = 20
 }
 
 # Progress Bar (Bottom Right, under menu)
 + progress_bar {
     id = "__timeout__"
-    left = 55%
-    top = 75%
-    width = 40%
+    left = 52%
+    top = 80%
+    width = 46%
     height = 20
     show_text = true
     font = "Hyper Fighting Regular 14"

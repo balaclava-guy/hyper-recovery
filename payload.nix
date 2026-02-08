@@ -232,7 +232,7 @@ in
   environment.etc."motd".text = (builtins.readFile ./assets/motd-logo.ansi) + ''
     Welcome to Snosu Hyper Recovery Environment
     * Access the Web UI at: https://<IP>:9090
-    * Default user: root / nixos
+    * Default user: snosu / nixos
   '';
 
   # Standard Packages
@@ -248,11 +248,15 @@ in
   # Auth
   users.mutableUsers = false;
   users.users.root = {
-    password = "nixos";
     initialPassword = lib.mkForce null;
     hashedPassword = lib.mkForce null;
     hashedPasswordFile = lib.mkForce null;
     initialHashedPassword = lib.mkForce null;
+  };
+  users.users.snosu = {
+    isNormalUser = true;
+    initialPassword = "nixos";
+    extraGroups = [ "wheel" ];
   };
   services.openssh = {
     enable = true;
@@ -268,6 +272,7 @@ in
     enable = lib.mkForce true;
     theme = "snosu-hyper-recovery";
     themePackages = [ snosuPlymouthTheme ];
+    font = "${snosuPlymouthTheme}/share/fonts/truetype/undefined-medium.ttf";
   };
 
   boot.loader.grub = {

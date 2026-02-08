@@ -11,9 +11,9 @@ font_name = "Undefined Medium";
 font_size = 14;
 font_desc = font_name + " " + font_size;
 
-// Screen dimensions
-screen_width = Window.GetWidth();
-screen_height = Window.GetHeight();
+// Screen dimensions (initialized later)
+screen_width = 0;
+screen_height = 0;
 
 // Background
 Window.SetBackgroundTopColor(0.0, 0.0, 0.0);
@@ -28,34 +28,55 @@ for (i = 1; i <= frame_count; i++)
 // Load progress bar image
 progress_bar_image = Image("progress_bar.png");
 
-// Calculate scale factor to fit screen while maintaining aspect ratio
-// Images are now smaller (resized 50%), so we need to scale them up more
-image_width = images[1].GetWidth();
-image_height = images[1].GetHeight();
-
-scale_x = screen_width / image_width;
-scale_y = screen_height / image_height;
-
-if (scale_x < scale_y)
-  scale_factor = scale_x;
-else
-  scale_factor = scale_y;
-
-new_width = image_width * scale_factor;
-new_height = image_height * scale_factor;
-
-pos_x = (screen_width - new_width) / 2;
-pos_y = (screen_height - new_height) / 2;
+// Layout state
+scale_factor = 1.0;
+new_width = 0;
+new_height = 0;
+pos_x = 0;
+pos_y = 0;
+initialized = 0;
 
 // Main Animation Sprite
 sprite = Sprite();
-sprite.SetX(pos_x);
-sprite.SetY(pos_y);
 
 // Progress Bar Sprite (Bouncing)
 progress_sprite = Sprite(progress_bar_image);
-progress_sprite.SetY(screen_height - 30); // 30px from bottom
-progress_bar_width = progress_bar_image.GetWidth();
+progress_bar_width = 0;
+
+fun init_layout ()
+  {
+    screen_width = Window.GetWidth();
+    screen_height = Window.GetHeight();
+    if (screen_width <= 0 || screen_height <= 0)
+      return;
+
+    image_width = images[1].GetWidth();
+    image_height = images[1].GetHeight();
+    if (image_width <= 0 || image_height <= 0)
+      return;
+
+    scale_x = screen_width / image_width;
+    scale_y = screen_height / image_height;
+
+    if (scale_x < scale_y)
+      scale_factor = scale_x;
+    else
+      scale_factor = scale_y;
+
+    new_width = image_width * scale_factor;
+    new_height = image_height * scale_factor;
+
+    pos_x = (screen_width - new_width) / 2;
+    pos_y = (screen_height - new_height) / 2;
+
+    sprite.SetX(pos_x);
+    sprite.SetY(pos_y);
+
+    progress_sprite.SetY(screen_height - 30); // 30px from bottom
+    progress_bar_width = progress_bar_image.GetWidth();
+
+    initialized = 1;
+  }
 
 // Text Sprites (3 lines)
 // n-2 (Grey), n-1 (White), n+0 (Grey)
@@ -89,6 +110,8 @@ fun truncate_and_format(text)
 
 fun update_text_sprites()
   {
+    if (!initialized)
+      return;
     // Line n-2 (Grey)
     if (msg_n2 != "") {
       img = Image.Text(msg_n2, 0.5, 0.5, 0.5, 1.0, font_desc);
@@ -118,6 +141,12 @@ fun update_text_sprites()
 
 fun refresh_callback ()
   {
+    if (!initialized)
+      {
+        init_layout();
+        if (!initialized)
+          return;
+      }
     // Throttle to approx 24 FPS (assuming 50Hz refresh)
     tick_counter++;
     if (tick_counter % 2 == 0)
