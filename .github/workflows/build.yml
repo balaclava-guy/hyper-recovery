@@ -42,7 +42,7 @@ jobs:
           # Since Garnix already built this successfully (check_suite=success),
           # this should just download the closure from cache.garnix.io.
           # We add --refresh to ensure we check the remote cache.
-          nix build .#images-7z --out-link result-artifacts --print-build-logs --refresh
+          nix build .#poc-images-7z --out-link result-artifacts --print-build-logs --refresh
           
           echo "::endgroup::"
 

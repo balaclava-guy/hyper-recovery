@@ -23,6 +23,14 @@
         packaging.images
       ];
     };
+
+    pocOS = nixpkgs.lib.nixosSystem {
+      inherit system;
+      modules = [
+        ./poc-debug.nix
+        "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
+      ];
+    };
   in
   {
     devShells.${system}.default = pkgs.mkShell {
@@ -40,6 +48,26 @@
 
       # 3. VM Image (QCOW2 for testing)
       vm = myOS.config.system.build.images.qemu-efi;
+
+      # POC minimal ISO for initrd log capture
+      poc-iso = pocOS.config.system.build.isoImage;
+
+      poc-images-7z = pkgs.runCommand "snosu-hyper-recovery-poc-7z" {
+        nativeBuildInputs = [ pkgs._7zz pkgs.coreutils ];
+      } ''
+        set -euo pipefail
+        mkdir -p $out
+
+        shopt -s nullglob
+        isos=(${pocOS.config.system.build.isoImage}/iso/*.iso)
+        if [ "''${#isos[@]}" -eq 0 ]; then
+          echo "No ISO found under ${pocOS.config.system.build.isoImage}/iso" >&2
+          ls -lah ${pocOS.config.system.build.isoImage} >&2
+          exit 1
+        fi
+
+        7zz a -t7z -mx=9 -mmt -ms=on "$out/hyper-recovery-live.iso.7z" "''${isos[0]}"
+      '';
 
       # Meta-package for CI to build everything
       images = pkgs.linkFarm "snosu-images" [
