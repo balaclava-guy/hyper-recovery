@@ -59,10 +59,33 @@ jobs:
           fi
           echo "Found $count artifact(s)."
 
-      - name: Upload to GitHub Actions
+      # We split the uploads so they appear as separate items in the GitHub UI
+      # Note: GitHub Actions *always* wraps artifacts in a .zip file. 
+      # We use 'compression-level: 0' to speed up this wrapping since our files are already 7-zipped.
+
+      - name: Upload Live ISO
         uses: actions/upload-artifact@v4
         with:
-          name: hyper-recovery-builds
-          path: dist/*.7z
+          name: live-iso
+          path: dist/snosu-hyper-recovery-x86_64-linux.iso.7z
           if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
+
+      - name: Upload Debug ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-iso
+          path: dist/snosu-hyper-recovery-debug-x86_64-linux.iso.7z
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 90
+
+      - name: Upload VM Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: vm-image
+          path: dist/*.qcow2.7z
+          if-no-files-found: ignore
+          compression-level: 0
           retention-days: 90
