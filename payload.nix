@@ -6,7 +6,7 @@ let
     #!/usr/bin/env bash
     set +e
     
-    OUT_DIR="/tmp/hyper-debug-$(date +%Y%m%d-%H%M%S)"
+    OUT_DIR="''${HYPER_DEBUG_DIR:-/tmp/hyper-debug-$(date +%Y%m%d-%H%M%S)}"
     mkdir -p "$OUT_DIR"
     
     echo "Collecting system diagnostics to $OUT_DIR ..."
@@ -78,6 +78,28 @@ let
     echo ""
     echo "To view: ls $OUT_DIR"
     echo "To copy via SSH: scp -r root@<IP>:$OUT_DIR ."
+  '';
+
+  hyperDebugSerialScript = pkgs.writeShellScript "hyper-debug-serial" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    export HYPER_DEBUG_DIR="/run/hyper-debug"
+    rm -rf "$HYPER_DEBUG_DIR"
+    mkdir -p "$HYPER_DEBUG_DIR"
+
+    echo "=== hyper-debug-serial start ==="
+    hyper-debug || true
+
+    for f in system-info.txt plymouth.txt journal-plymouth.txt graphics.txt; do
+      if [ -f "$HYPER_DEBUG_DIR/$f" ]; then
+        echo "--- $f ---"
+        cat "$HYPER_DEBUG_DIR/$f"
+        echo ""
+      fi
+    done
+
+    echo "=== hyper-debug-serial end ==="
   '';
 
   # 1. Snosu Plymouth Theme Package
@@ -334,5 +356,35 @@ in
         sync
       '';
     };
+  };
+
+  systemd.services.hyper-debug-serial = {
+    description = "Dump hyper debug info to serial when hyper.debug=1";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "systemd-journald.service" "network-online.target" ];
+    wants = [ "network-online.target" ];
+    unitConfig.ConditionKernelCommandLine = "hyper.debug=1";
+    serviceConfig = {
+      Type = "oneshot";
+      StandardOutput = "tty";
+      StandardError = "tty";
+      TTYPath = "/dev/ttyS0";
+      TTYReset = "yes";
+      TTYVHangup = "yes";
+    };
+    path = [
+      pkgs.coreutils
+      pkgs.util-linux
+      pkgs.systemd
+      pkgs.networkmanager
+      pkgs.plymouth
+      hyperDebugScript
+    ];
+    script = ''
+      set -euo pipefail
+      echo "hyper-debug-serial: starting"
+      ${hyperDebugSerialScript}
+      echo "hyper-debug-serial: done"
+    '';
   };
 }

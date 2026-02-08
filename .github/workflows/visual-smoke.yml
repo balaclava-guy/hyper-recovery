@@ -28,8 +28,11 @@ jobs:
       - name: Build ISO
         run: |
           nix build .#packages.x86_64-linux.usb --out-link result-iso --print-build-logs --refresh
+          nix build .#packages.x86_64-linux.usb-debug --out-link result-iso-debug --print-build-logs --refresh
           ISO_PATH=$(ls result-iso/iso/*.iso | head -1)
+          ISO_DEBUG_PATH=$(ls result-iso-debug/iso/*.iso | head -1)
           echo "ISO_PATH=$ISO_PATH" >> $GITHUB_ENV
+          echo "ISO_DEBUG_PATH=$ISO_DEBUG_PATH" >> $GITHUB_ENV
 
       - name: Boot ISO and capture visuals
         shell: bash
@@ -46,7 +49,8 @@ jobs:
             local monitor_socket=$3
             local serial_log=$4
             local prefix=$5
-            shift 5
+            local iso_path=$6
+            shift 6
             local firmware_args=("$@")
 
             qemu-system-x86_64 \
@@ -56,7 +60,7 @@ jobs:
               -vnc :"$vnc_port" \
               -serial file:"$serial_log" \
               -monitor unix:"$monitor_socket",server,nowait \
-              -cdrom "$ISO_PATH" \
+              -cdrom "$iso_path" \
               -boot d \
               -no-reboot \
               "${firmware_args[@]}" &
@@ -124,16 +128,23 @@ jobs:
             kill "$QEMU_PID" || true
           }
 
-          # BIOS boot test
-          run_boot "bios" 1 /tmp/qemu-monitor-bios artifacts/serial-bios.log bios
+          # BIOS boot test (main ISO)
+          run_boot "bios" 1 /tmp/qemu-monitor-bios artifacts/serial-bios.log bios "$ISO_PATH"
 
-          # EFI boot test
+          # EFI boot test (main ISO)
           EFI_CODE="/usr/share/OVMF/OVMF_CODE.fd"
           EFI_VARS="/tmp/OVMF_VARS.fd"
           cp /usr/share/OVMF/OVMF_VARS.fd "$EFI_VARS"
-          run_boot "efi" 2 /tmp/qemu-monitor-efi artifacts/serial-efi.log efi \
+          run_boot "efi" 2 /tmp/qemu-monitor-efi artifacts/serial-efi.log efi "$ISO_PATH" \
             -drive if=pflash,format=raw,readonly=on,file="$EFI_CODE" \
             -drive if=pflash,format=raw,file="$EFI_VARS"
+
+          # EFI boot test (debug ISO with hyper.debug=1)
+          EFI_VARS_DEBUG="/tmp/OVMF_VARS_DEBUG.fd"
+          cp /usr/share/OVMF/OVMF_VARS.fd "$EFI_VARS_DEBUG"
+          run_boot "debug-efi" 3 /tmp/qemu-monitor-debug artifacts/serial-debug-efi.log debug-efi "$ISO_DEBUG_PATH" \
+            -drive if=pflash,format=raw,readonly=on,file="$EFI_CODE" \
+            -drive if=pflash,format=raw,file="$EFI_VARS_DEBUG"
 
       - name: Upload visual artifacts
         if: always()
@@ -151,4 +162,9 @@ jobs:
             artifacts/efi-shot3.png
             artifacts/efi-boot.mp4
             artifacts/serial-efi.log
+            artifacts/debug-efi-shot1.png
+            artifacts/debug-efi-shot2.png
+            artifacts/debug-efi-shot3.png
+            artifacts/debug-efi-boot.mp4
+            artifacts/serial-debug-efi.log
           if-no-files-found: warn

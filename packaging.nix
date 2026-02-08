@@ -110,6 +110,8 @@
           "rd.debug"
           "plymouth.debug"
           "splash"
+          "console=ttyS0,115200"
+          "hyper.debug=1"
         ];
 
         # Keep Plymouth enabled for debugging the theme
