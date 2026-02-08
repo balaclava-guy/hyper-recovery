@@ -1,169 +1,68 @@
-name: Fetch & Release Artifacts
+name: Fetch & Store Artifacts
 
 on:
   check_suite:
-    types: [ completed ]
+    types: [completed]
   workflow_dispatch:
-    inputs:
-      force_build:
-        description: 'Force a full build instead of fetching from Garnix'
-        type: boolean
-        required: false
-        default: false
 
 jobs:
-  # ============================================================================
-  # Job 1: Check Garnix Build Status
-  # ============================================================================
-  check-garnix:
-    name: Check Garnix Build Status
-    if: github.event_name == 'check_suite' && github.event.check_suite.app.slug == 'garnix-ci'
-    runs-on: ubuntu-latest
-    outputs:
-      garnix_success: ${{ steps.status.outputs.success }}
-      build_url: ${{ steps.status.outputs.url }}
-    steps:
-    - name: Report Garnix Build Status
-      id: status
-      run: |
-        echo "::notice title=Garnix Build::Garnix CI build completed with status: ${{ github.event.check_suite.conclusion }}"
-        echo "success=${{ github.event.check_suite.conclusion == 'success' }}" >> $GITHUB_OUTPUT
-        
-        # Try to find Garnix build URL from check runs
-        BUILD_URL="https://garnix.io/repo/${{ github.repository }}"
-        echo "url=${BUILD_URL}" >> $GITHUB_OUTPUT
-        
-        echo "## Garnix Build Status" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "- **Status**: ${{ github.event.check_suite.conclusion }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Head SHA**: \`${{ github.event.check_suite.head_sha }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "- **Head Branch**: ${{ github.event.check_suite.head_branch }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Garnix Dashboard**: ${BUILD_URL}" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        
-        if [ "${{ github.event.check_suite.conclusion }}" = "success" ]; then
-          echo "✅ Garnix build succeeded! Proceeding to fetch artifacts." >> $GITHUB_STEP_SUMMARY
-        else
-          echo "❌ Garnix build failed. Artifacts will not be fetched." >> $GITHUB_STEP_SUMMARY
-          echo "Please check the Garnix dashboard for build logs." >> $GITHUB_STEP_SUMMARY
-        fi
-
-  # ============================================================================
-  # Job 2: Fetch Artifacts from Garnix Cache
-  # ============================================================================
   fetch-artifacts:
-    name: Fetch Built Artifacts
-    needs: check-garnix
-    if: needs.check-garnix.outputs.garnix_success == 'true'
+    name: Fetch Artifacts from Garnix
+    # Only run if:
+    # 1. It's a check_suite event from 'garnix-ci' and it succeeded
+    # 2. OR it's a manual dispatch
+    if: |
+      (github.event_name == 'check_suite' && 
+       github.event.check_suite.app.slug == 'garnix-ci' && 
+       github.event.check_suite.conclusion == 'success') ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 20  # Should be fast if Garnix succeeded
+    timeout-minutes: 15
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          # Important: For check_suite, we must checkout the commit that was checked!
+          # Otherwise default checkout might be different if pushes happened.
+          ref: ${{ github.event.check_suite.head_sha || github.sha }}
 
-    - uses: cachix/install-nix-action@v27
-      with:
-        extra_nix_config: |
-          substituters = https://cache.nixos.org https://cache.garnix.io
-          trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            substituters = https://cache.nixos.org https://cache.garnix.io
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=
 
-    - name: Fetch Artifacts from Garnix Cache
-      run: |
-        echo "::notice title=Fetching from Cache::Garnix build succeeded - fetching artifacts from cache..."
-        
-        # Simple fetch - if Garnix succeeded, artifacts are in cache
-        nix build .#images-7z --out-link result-images-7z --print-build-logs
-        
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "## ✅ Artifacts Fetched" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Files:" >> $GITHUB_STEP_SUMMARY
-        ls -lh result-images-7z/ >> $GITHUB_STEP_SUMMARY
+      - name: Fetch from Cache
+        run: |
+          echo "::group::Fetching Artifacts"
+          echo "Fetching artifacts from Garnix cache for commit $(git rev-parse --short HEAD)..."
+          
+          # Build the images-7z package. 
+          # Since Garnix already built this successfully (check_suite=success),
+          # this should just download the closure from cache.garnix.io.
+          # We add --refresh to ensure we check the remote cache.
+          nix build .#images-7z --out-link result-artifacts --print-build-logs --refresh
+          
+          echo "::endgroup::"
 
-    - name: Stage Artifacts
-      run: |
-        mkdir -p dist
-        mapfile -t files < <(find -L result-images-7z -type f -name "*.7z")
-        
-        if [ ${#files[@]} -eq 0 ]; then
-          echo "::error title=No Artifacts::No .7z artifacts found in result-images-7z"
-          ls -la result-images-7z/
-          exit 1
-        fi
-        
-        echo "::notice title=Staging Artifacts::Found ${#files[@]} artifact(s)"
-        cp "${files[@]}" dist/
-        
-        # Show what we're uploading
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "## 📦 Ready to Upload" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        for file in dist/*.7z; do
-          size=$(du -h "$file" | cut -f1)
-          echo "- \`$(basename "$file")\` ($size)" >> $GITHUB_STEP_SUMMARY
-        done
+      - name: Stage Artifacts
+        run: |
+          mkdir -p dist
+          # Find .7z files in the result symlink
+          find -L result-artifacts -name "*.7z" -exec cp {} dist/ \;
+          
+          count=$(ls dist/*.7z 2>/dev/null | wc -l)
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No .7z artifacts found in build result!"
+            exit 1
+          fi
+          echo "Found $count artifact(s)."
 
-    - name: Upload Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: snosu-hyper-recovery-artifacts
-        path: dist/*.7z
-        if-no-files-found: error
-        retention-days: 90
-
-  # ============================================================================
-  # Job 3: Fallback Build (Manual Only)
-  # ============================================================================
-  fallback-build:
-    name: Fallback Build (Manual)
-    if: github.event_name == 'workflow_dispatch' && inputs.force_build == true
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Free Disk Space
-      run: |
-        echo "::notice title=Cleanup::Freeing disk space for full build..."
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /usr/local/lib/android
-        sudo rm -rf /opt/ghc
-        sudo rm -rf /opt/hostedtoolcache
-        df -h
-
-    - uses: cachix/install-nix-action@v27
-      with:
-        extra_nix_config: |
-          substituters = https://cache.nixos.org https://cache.garnix.io
-          trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=
-
-    - uses: DeterminateSystems/magic-nix-cache-action@v13
-
-    - name: Build Compressed Artifacts
-      run: |
-        echo "::warning title=Fallback Build::Building artifacts locally (this may take a while)..."
-        nix build .#images-7z --out-link result-images-7z --print-build-logs
-
-    - name: Stage Artifacts
-      run: |
-        mkdir -p dist
-        mapfile -t files < <(find -L result-images-7z -type f -name "*.7z")
-        
-        if [ ${#files[@]} -eq 0 ]; then
-          echo "::error title=Build Failed::No .7z artifacts produced"
-          ls -la result-images-7z/
-          exit 1
-        fi
-        
-        echo "::notice title=Build Complete::Built ${#files[@]} artifact(s)"
-        cp "${files[@]}" dist/
-
-    - name: Upload Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: snosu-hyper-recovery-artifacts-manual
-        path: dist/*.7z
-        if-no-files-found: error
-        retention-days: 30
+      - name: Upload to GitHub Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyper-recovery-builds
+          path: dist/*.7z
+          if-no-files-found: error
+          retention-days: 90
