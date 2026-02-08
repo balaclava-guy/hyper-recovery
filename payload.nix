@@ -91,11 +91,19 @@ in
   ];
   
   # KMS drivers for Plymouth (critical for boot splash to work)
+  # AND storage drivers for boot (critical for finding root device)
   boot.initrd.kernelModules = [ 
-    "i915"      # Intel graphics
-    "amdgpu"    # AMD graphics
-    "nouveau"   # NVIDIA (open source)
-    "radeon"    # Older AMD graphics
+    # Graphics
+    "i915" "amdgpu" "nouveau" "radeon"
+    
+    # Storage / Virtualization (Essential for Recovery Environment)
+    "virtio_blk" "virtio_pci" "virtio_scsi"  # QEMU/KVM
+    "nvme"        # NVMe drives
+    "ahci"        # SATA
+    "xhci_pci"    # USB 3.x
+    "usb_storage" # USB Mass Storage
+    "sd_mod"      # SCSI/SATA disks
+    "sr_mod"      # CD-ROMs
   ];
 
   # Performance & Space Optimizations
