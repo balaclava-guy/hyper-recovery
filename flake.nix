@@ -51,33 +51,32 @@
       ];
 
       # 5. Compressed artifacts (7z LZMA2)
-      images-7z =
-        let
-          images = myOS.config.system.build.images;
-          # Evaluate file paths at Nix evaluation time
-          isoPath = "${images.iso}/${images.iso.passthru.filePath}";
-          isoDebugPath = "${images.iso-debug}/${images.iso-debug.passthru.filePath}";
-          rawPath = "${images.raw-efi}/${images.raw-efi.passthru.filePath}";
-          qcow2Path = "${images.qemu-efi}/${images.qemu-efi.passthru.filePath}";
-        in
-        pkgs.runCommand "snosu-hyper-recovery-images-7z" {
-          nativeBuildInputs = [ pkgs.p7zip pkgs.coreutils ];
-        } ''
-          set -euo pipefail
-          mkdir -p $out
+      images-7z = pkgs.runCommand "snosu-hyper-recovery-images-7z" {
+        nativeBuildInputs = [ pkgs.p7zip pkgs.findutils pkgs.coreutils ];
+      } ''
+        set -euo pipefail
+        mkdir -p $out
 
-          # ISO
-          7z a -t7z -mx=9 "$out/snosu-hyper-recovery-x86_64-linux.iso.7z" "${isoPath}"
+        images_root="${self.packages.${system}.images}"
+        files=$(find -L "$images_root" -type f \( \
+          -name "*.iso" -o -name "*.img" -o -name "*.qcow2" -o -name "*.qcow" \
+          -o -name "*.raw" -o -name "*.vmdk" -o -name "*.vhd" -o -name "*.vhdx" \
+        \))
 
-          # Debug ISO
-          7z a -t7z -mx=9 "$out/snosu-hyper-recovery-debug-x86_64-linux.iso.7z" "${isoDebugPath}"
+        if [ -z "$files" ]; then
+          echo "No image artifacts found under $images_root" >&2
+          find -L "$images_root" -maxdepth 4 -type f | head -n 50 >&2
+          exit 1
+        fi
 
-          # Raw USB Image
-          7z a -t7z -mx=9 "$out/snosu-hyper-recovery-x86_64-linux.img.7z" "${rawPath}"
-
-          # QCOW2 VM Image
-          7z a -t7z -mx=9 "$out/snosu-hyper-recovery-x86_64-linux.qcow2.7z" "${qcow2Path}"
-        '';
+        workdir=$(mktemp -d)
+        while IFS= read -r file; do
+          base_name=$(basename "$file")
+          cp "$file" "$workdir/$base_name"
+          7z a -t7z -mx=9 "$out/''${base_name}.7z" "$workdir/$base_name"
+          rm -f "$workdir/$base_name"
+        done <<< "$files"
+      '';
     };
   };
 }
