@@ -56,7 +56,7 @@ jobs:
     needs: check-garnix
     if: needs.check-garnix.outputs.garnix_success == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30  # Allow time for potential local build fallback
+    timeout-minutes: 20  # Should be fast if Garnix succeeded
     steps:
     - uses: actions/checkout@v4
 
@@ -66,49 +66,15 @@ jobs:
           substituters = https://cache.nixos.org https://cache.garnix.io
           trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=
 
-    - name: Wait for Garnix Cache Propagation
+    - name: Fetch Artifacts from Garnix Cache
       run: |
-        echo "::notice title=Cache Sync::Waiting 30 seconds for Garnix to propagate artifacts to cache..."
-        echo "Garnix build completed, allowing time for cache sync..."
-        sleep 30
-
-    - name: Fetch Compressed Artifacts from Garnix
-      id: fetch
-      timeout-minutes: 15  # Increased timeout for potential local build
-      run: |
-        echo "::notice title=Fetching from Garnix::Attempting to download pre-built artifacts from Garnix cache..."
+        echo "::notice title=Fetching from Cache::Garnix build succeeded - fetching artifacts from cache..."
         
-        # Try Garnix cache first (with short timeout)
-        if timeout 180 nix build .#images-7z --out-link result-images-7z \
-          --option substituters "https://cache.garnix.io" \
-          --option trusted-public-keys "cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=" \
-          --option fallback false \
-          --max-jobs 0 2>&1 | tee /tmp/garnix-fetch.log; then
-          
-          echo "✅ Successfully fetched from Garnix cache!" | tee -a $GITHUB_STEP_SUMMARY
-          echo "cache_source=garnix" >> $GITHUB_OUTPUT
-        else
-          echo "::warning title=Garnix Cache Miss::Garnix cache not available yet (may still be building)"
-          echo "❌ Garnix cache not available. This is normal for new commits." | tee -a $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Note**: Garnix may still be building this commit. Check https://garnix.io/repo/${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "🔄 Falling back to NixOS cache + local build..." >> $GITHUB_STEP_SUMMARY
-          
-          # Fall back to NixOS cache, but ALLOW local building as last resort
-          nix build .#images-7z --out-link result-images-7z \
-            --option substituters "https://cache.nixos.org https://cache.garnix.io" \
-            --option trusted-public-keys "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=" \
-            --print-build-logs
-          
-          echo "✅ Build completed (some components may have been built locally)" | tee -a $GITHUB_STEP_SUMMARY
-          echo "cache_source=nixos-or-local" >> $GITHUB_OUTPUT
-        fi
+        # Simple fetch - if Garnix succeeded, artifacts are in cache
+        nix build .#images-7z --out-link result-images-7z --print-build-logs
         
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "## Artifacts Ready" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Source**: \`$(cat $GITHUB_OUTPUT | grep cache_source | cut -d= -f2)\`" >> $GITHUB_STEP_SUMMARY
+        echo "## ✅ Artifacts Fetched" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Files:" >> $GITHUB_STEP_SUMMARY
         ls -lh result-images-7z/ >> $GITHUB_STEP_SUMMARY
