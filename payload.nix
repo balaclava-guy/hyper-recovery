@@ -229,7 +229,7 @@ in
 
   # Networking
   networking.networkmanager.enable = true;
-  services.dhcpcd.enable = false;
+  networking.dhcpcd.enable = false;
 
   # Virtualization Stack
   virtualisation.libvirtd = {
