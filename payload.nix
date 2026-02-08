@@ -202,7 +202,7 @@ in
   # AND storage drivers for boot (critical for finding root device)
   boot.initrd.kernelModules = [ 
     # Graphics
-    "i915" "amdgpu" "nouveau" "radeon" "virtio_gpu" "bochs_drm"
+    "i915" "amdgpu" "nouveau" "radeon" "virtio_gpu"
     
     # Storage / Virtualization (Essential for Recovery Environment)
     "virtio_blk" "virtio_pci" "virtio_scsi"  # QEMU/KVM
