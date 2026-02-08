@@ -314,6 +314,11 @@ in
     '';
   };
 
+  # Ensure the virtio GPU DRM device exists during initrd so Plymouth can start.
+  boot.initrd.postDeviceCommands = lib.mkAfter ''
+    modprobe virtio_gpu || true
+  '';
+
   boot.loader.grub = {
     enable = true;
     theme = snosuGrubTheme;
