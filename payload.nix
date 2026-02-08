@@ -184,19 +184,10 @@ in
     
     # GRUB configuration
     useOSProber = true;  # Detect other OSes on local drives
-    extraEntries = ''
-      # Debug boot entry with verbose logging and Plymouth debug
-      menuentry "Snosu Hyper Recovery (Debug Mode)" {
-        linux /boot/kernel loglevel=7 systemd.log_level=debug systemd.log_target=console rd.debug plymouth.debug splash
-        initrd /boot/initrd
-      }
-      
-      # Recovery mode without Plymouth
-      menuentry "Snosu Hyper Recovery (No Splash)" {
-        linux /boot/kernel quiet loglevel=3
-        initrd /boot/initrd
-      }
-    '';
+    
+    # NOTE: Do not add manual 'menuentry' items here for kernel/initrd.
+    # On the ISO, kernel paths are dynamic and managed by the ISO generator.
+    # Manual entries with '/boot/kernel' will fail.
   };
   boot.loader.systemd-boot.enable = lib.mkForce false;
 

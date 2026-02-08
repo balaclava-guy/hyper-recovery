@@ -68,9 +68,12 @@
           "systemd.log_level=debug"
           "systemd.log_target=console"
           "rd.debug"
-          "plymouth.debug"
-          "splash"
+          # "plymouth.debug" # Too verbose, fills screen with Plymouth-internal logs
+          # "splash" # Disabled in debug mode so we see text logs clearly
         ];
+
+        # Explicitly disable Plymouth in debug mode to ensure clean text console
+        boot.plymouth.enable = false;
 
         boot.initrd.kernelModules = [ "loop" "isofs" "usb_storage" "uas" "sd_mod" ];
       };
