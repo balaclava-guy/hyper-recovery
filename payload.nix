@@ -8,15 +8,39 @@ let
     src = ./snosu-hyper-recovery;
     fontSrc = ./assets/fonts/undefined-medium/undefined-medium.ttf;
     
+    nativeBuildInputs = [ pkgs.plymouth ];
+    
     installPhase = ''
       mkdir -p $out/share/plymouth/themes/snosu-hyper-recovery
-      cp -r * $out/share/plymouth/themes/snosu-hyper-recovery
       
-      # Copy font to theme directory
+      # Copy theme files (script, plymouth config, images)
+      cp snosu-hyper-recovery.plymouth $out/share/plymouth/themes/snosu-hyper-recovery/
+      cp snosu-hyper-recovery.script $out/share/plymouth/themes/snosu-hyper-recovery/
+      cp -r images $out/share/plymouth/themes/snosu-hyper-recovery/
+      
+      # Copy and install font
+      mkdir -p $out/share/fonts/truetype
+      cp $fontSrc $out/share/fonts/truetype/undefined-medium.ttf
+      
+      # Also copy font to theme directory for direct access
       cp $fontSrc $out/share/plymouth/themes/snosu-hyper-recovery/undefined-medium.ttf
       
-      # Fix permissions if needed
-      chmod -R +w $out/share/plymouth/themes/snosu-hyper-recovery
+      # Verify all required files are present
+      echo "Verifying Plymouth theme installation..."
+      test -f $out/share/plymouth/themes/snosu-hyper-recovery/snosu-hyper-recovery.plymouth || \
+        (echo "ERROR: .plymouth file missing" && exit 1)
+      test -f $out/share/plymouth/themes/snosu-hyper-recovery/snosu-hyper-recovery.script || \
+        (echo "ERROR: .script file missing" && exit 1)
+      test -d $out/share/plymouth/themes/snosu-hyper-recovery/images || \
+        (echo "ERROR: images directory missing" && exit 1)
+      
+      # Count animation frames
+      frame_count=$(ls -1 $out/share/plymouth/themes/snosu-hyper-recovery/images/*.png 2>/dev/null | wc -l)
+      echo "Found $frame_count PNG files in images directory"
+      
+      # Fix permissions
+      chmod -R +r $out/share/plymouth/themes/snosu-hyper-recovery
+      chmod -R +r $out/share/fonts
     '';
   };
 
@@ -64,6 +88,14 @@ in
     "rd.udev.log_level=3" 
     "udev.log_priority=3" 
     "vt.global_cursor_default=0"
+  ];
+  
+  # KMS drivers for Plymouth (critical for boot splash to work)
+  boot.initrd.kernelModules = [ 
+    "i915"      # Intel graphics
+    "amdgpu"    # AMD graphics
+    "nouveau"   # NVIDIA (open source)
+    "radeon"    # Older AMD graphics
   ];
 
   # Performance & Space Optimizations
@@ -144,8 +176,27 @@ in
     enable = true;
     theme = snosuGrubTheme;
     splashImage = "${snosuGrubTheme}/background.png";
+    
+    # Hybrid boot support - both EFI and BIOS
     efiSupport = true;
-    device = "nodev";
+    efiInstallAsRemovable = true;  # Critical for Ventoy compatibility
+    device = "nodev";  # Will be set during image postVM hook
+    
+    # GRUB configuration
+    useOSProber = true;  # Detect other OSes on local drives
+    extraEntries = ''
+      # Debug boot entry with verbose logging and Plymouth debug
+      menuentry "Snosu Hyper Recovery (Debug Mode)" {
+        linux /boot/kernel loglevel=7 systemd.log_level=debug systemd.log_target=console rd.debug plymouth.debug splash
+        initrd /boot/initrd
+      }
+      
+      # Recovery mode without Plymouth
+      menuentry "Snosu Hyper Recovery (No Splash)" {
+        linux /boot/kernel quiet loglevel=3
+        initrd /boot/initrd
+      }
+    '';
   };
   boot.loader.systemd-boot.enable = lib.mkForce false;
 

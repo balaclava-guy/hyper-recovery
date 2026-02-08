@@ -1,70 +1,100 @@
 { inputs, ... }:
 
 {
-  images = { lib, ... }: {
+  images = { lib, pkgs, config, modulesPath, ... }: {
     imports = [
       "${inputs.nixpkgs}/nixos/modules/image/images.nix"
     ];
 
     image.modules = {
-      iso = { lib, config, ... }: {
+      usb-live = { lib, pkgs, config, ... }: {
         imports = [
-          "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
+          "${inputs.nixpkgs}/nixos/modules/virtualisation/disk-image.nix"
         ];
 
-        image.fileName = lib.mkDefault "snosu-hyper-recovery-x86_64-linux.iso";
-        isoImage.volumeID = "SNOSU_RECOVERY";
-        isoImage.makeEfiBootable = true;
-        isoImage.makeBiosBootable = true;
-        isoImage.squashfsCompression = "zstd -Xcompression-level 19";
+        image.fileName = lib.mkDefault "snosu-hyper-recovery-x86_64-linux.img";
+        image.format = "raw";
+        image.baseName = "snosu-hyper-recovery";
+        
+        # Enable EFI support for GPT partition table
+        image.efiSupport = true;
+        
+        # Ensure we have a proper partition layout
+        # The disk-image.nix module will create:
+        # - GPT partition table
+        # - ESP (EFI System Partition)
+        # - Root partition
+        
+        # GRUB will be installed by NixOS's activation scripts
+        # We just need to ensure it's configured for both BIOS and EFI
+        boot.loader.grub = {
+          # Force both targets
+          extraInstallCommands = lib.mkAfter ''
+            # Install GRUB for BIOS boot (in addition to EFI)
+            echo "Installing GRUB for BIOS compatibility..."
+            ${pkgs.grub2}/bin/grub-install --target=i386-pc --force $device || true
+            
+            echo "Hybrid GRUB installation complete (BIOS + EFI)"
+          '';
+        };
 
-        isoImage.grubTheme = config.boot.loader.grub.theme;
-
-        system.nixos.distroName = "";
-        system.nixos.label = "";
-        isoImage.prependToMenuLabel = "START HYPER RECOVERY";
-        isoImage.appendToMenuLabel = "";
-
-        boot.initrd.kernelModules = [ "loop" "isofs" ];
+        # Filesystem and boot support
+        boot.initrd.kernelModules = [ "usb_storage" "uas" "sd_mod" ];
+        
+        # Ensure filesystem labels are set
+        fileSystems."/" = {
+          device = "/dev/disk/by-label/nixos";
+          fsType = "ext4";
+          autoResize = true;
+        };
+        
+        fileSystems."/boot" = lib.mkIf config.image.efiSupport {
+          device = "/dev/disk/by-label/ESP";
+          fsType = "vfat";
+        };
       };
 
-      iso-debug = { lib, config, ... }: {
+      usb-live-debug = { lib, pkgs, config, ... }: {
         imports = [
-          "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
+          "${inputs.nixpkgs}/nixos/modules/virtualisation/disk-image.nix"
         ];
 
-        image.fileName = lib.mkDefault "snosu-hyper-recovery-debug-x86_64-linux.iso";
-        isoImage.volumeID = "SNOSU_RECOVERY";
-        isoImage.makeEfiBootable = true;
-        isoImage.makeBiosBootable = true;
-        isoImage.squashfsCompression = "zstd -Xcompression-level 19";
+        image.fileName = lib.mkDefault "snosu-hyper-recovery-debug-x86_64-linux.img";
+        image.format = "raw";
+        image.baseName = "snosu-hyper-recovery-debug";
+        image.efiSupport = true;
+        
+        # GRUB hybrid installation
+        boot.loader.grub = {
+          extraInstallCommands = lib.mkAfter ''
+            echo "Installing GRUB for BIOS compatibility (debug)..."
+            ${pkgs.grub2}/bin/grub-install --target=i386-pc --force $device || true
+            echo "Hybrid GRUB installation complete (BIOS + EFI)"
+          '';
+        };
 
-        isoImage.grubTheme = config.boot.loader.grub.theme;
-
-        system.nixos.distroName = "";
-        system.nixos.label = "";
-        isoImage.prependToMenuLabel = "START HYPER RECOVERY (Debug)";
-        isoImage.appendToMenuLabel = "";
-
-        boot.kernelParams = lib.mkAfter [
+        # Debug kernel parameters
+        boot.kernelParams = lib.mkForce [
           "loglevel=7"
           "systemd.log_level=debug"
           "systemd.log_target=console"
           "rd.debug"
           "plymouth.debug"
+          "splash"
         ];
 
-        boot.initrd.kernelModules = [ "loop" "isofs" ];
-      };
-
-      raw-efi = { lib, ... }: {
-        imports = [
-          "${inputs.nixpkgs}/nixos/modules/virtualisation/disk-image.nix"
-        ];
-
-        image.format = "raw";
-        image.efiSupport = true;
-        image.fileName = lib.mkDefault "snosu-hyper-recovery-x86_64-linux.img";
+        boot.initrd.kernelModules = [ "usb_storage" "uas" "sd_mod" ];
+        
+        fileSystems."/" = {
+          device = "/dev/disk/by-label/nixos";
+          fsType = "ext4";
+          autoResize = true;
+        };
+        
+        fileSystems."/boot" = lib.mkIf config.image.efiSupport {
+          device = "/dev/disk/by-label/ESP";
+          fsType = "vfat";
+        };
       };
 
       qemu-efi = { lib, ... }: {

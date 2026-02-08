@@ -30,27 +30,23 @@
     };
 
     packages.${system} = {
-      # 1. Standard ISO
-      iso = myOS.config.system.build.images.iso;
+      # 1. USB Live Image (Hybrid BIOS/EFI)
+      usb = myOS.config.system.build.images.usb-live;
 
-      # 2. Debug ISO
-      iso-debug = myOS.config.system.build.images.iso-debug;
+      # 2. USB Live Image (Debug variant)
+      usb-debug = myOS.config.system.build.images.usb-live-debug;
 
-      # 3. Raw USB Image (IMG)
-      usb = myOS.config.system.build.images.raw-efi;
-
-      # 4. VM Image (QCOW2)
+      # 3. VM Image (QCOW2)
       vm = myOS.config.system.build.images.qemu-efi;
 
       # Meta-package for CI to build everything
       images = pkgs.linkFarm "snosu-images" [
-        { name = "iso"; path = self.packages.${system}.iso; }
-        { name = "iso-debug"; path = self.packages.${system}.iso-debug; }
         { name = "usb"; path = self.packages.${system}.usb; }
+        { name = "usb-debug"; path = self.packages.${system}.usb-debug; }
         { name = "vm"; path = self.packages.${system}.vm; }
       ];
 
-      # 5. Compressed artifacts (7z LZMA2)
+      # Compressed artifacts - individual 7z files (one per image)
       images-7z = pkgs.runCommand "snosu-hyper-recovery-images-7z" {
         nativeBuildInputs = [ pkgs.p7zip pkgs.findutils pkgs.coreutils ];
       } ''
@@ -58,24 +54,35 @@
         mkdir -p $out
 
         images_root="${self.packages.${system}.images}"
+        
+        # Find all image files
         files=$(find -L "$images_root" -type f \( \
-          -name "*.iso" -o -name "*.img" -o -name "*.qcow2" -o -name "*.qcow" \
+          -name "*.img" -o -name "*.qcow2" -o -name "*.qcow" \
           -o -name "*.raw" -o -name "*.vmdk" -o -name "*.vhd" -o -name "*.vhdx" \
-        \))
+        \) || true)
 
         if [ -z "$files" ]; then
           echo "No image artifacts found under $images_root" >&2
+          echo "Directory contents:" >&2
           find -L "$images_root" -maxdepth 4 -type f | head -n 50 >&2
           exit 1
         fi
 
-        workdir=$(mktemp -d)
+        # Compress each file individually and place directly in $out
         while IFS= read -r file; do
+          if [ -z "$file" ]; then continue; fi
+          
           base_name=$(basename "$file")
-          cp "$file" "$workdir/$base_name"
-          7z a -t7z -mx=9 "$out/''${base_name}.7z" "$workdir/$base_name"
-          rm -f "$workdir/$base_name"
+          echo "Compressing $base_name..."
+          
+          # Compress directly from source to output (no intermediate copy)
+          7z a -t7z -mx=9 "$out/''${base_name}.7z" "$file"
+          
+          echo "Created $out/''${base_name}.7z"
         done <<< "$files"
+        
+        echo "Compression complete. Artifacts:"
+        ls -lh $out/
       '';
     };
   };
