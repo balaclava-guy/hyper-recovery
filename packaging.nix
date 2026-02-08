@@ -28,7 +28,9 @@
         isoImage.grubTheme = config.boot.loader.grub.theme;
         
         # Compression for smaller file size
-        isoImage.squashfsCompression = "zstd -Xcompression-level 19";
+        # NOTE: zstd -Xcompression-level 19 can cause "Invalid argument" errors with overlayfs
+        # on some systems. Reducing to level 15 for stability while maintaining good ratio.
+        isoImage.squashfsCompression = "zstd -Xcompression-level 15";
         
         # Clean boot menu labels
         system.nixos.distroName = "";
@@ -55,7 +57,8 @@
         image.fileName = lib.mkDefault "snosu-hyper-recovery-debug-x86_64-linux.iso";
         
         isoImage.grubTheme = config.boot.loader.grub.theme;
-        isoImage.squashfsCompression = "zstd -Xcompression-level 19";
+        # Use more conservative compression for debug image to rule out FS issues
+        isoImage.squashfsCompression = "zstd -Xcompression-level 10";
         
         system.nixos.distroName = "";
         system.nixos.label = "";
