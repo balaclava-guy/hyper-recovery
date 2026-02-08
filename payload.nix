@@ -202,7 +202,7 @@ in
   # AND storage drivers for boot (critical for finding root device)
   boot.initrd.kernelModules = [ 
     # Graphics
-    "i915" "amdgpu" "nouveau" "radeon"
+    "i915" "amdgpu" "nouveau" "radeon" "virtio_gpu" "bochs_drm"
     
     # Storage / Virtualization (Essential for Recovery Environment)
     "virtio_blk" "virtio_pci" "virtio_scsi"  # QEMU/KVM
@@ -308,6 +308,10 @@ in
     theme = "snosu-hyper-recovery";
     themePackages = [ snosuPlymouthTheme ];
     font = "${snosuPlymouthTheme}/share/fonts/truetype/undefined-medium.ttf";
+    extraConfig = ''
+      DebugFile=/dev/ttyS0
+      DebugLevel=info
+    '';
   };
 
   boot.loader.grub = {
