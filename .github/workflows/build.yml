@@ -49,13 +49,12 @@ jobs:
       - name: Stage Artifacts
         run: |
           mkdir -p dist
-          # Find .7z files AND .iso files (we stopped compressing ISOs)
-          # Use -L to follow symlinks because result-artifacts is a symlink
-          find -L result-artifacts \( -name "*.7z" -o -name "*.iso" \) -exec cp {} dist/ \;
+          # Find .7z files in the result symlink
+          find -L result-artifacts -name "*.7z" -exec cp {} dist/ \;
           
-          count=$(ls dist/* 2>/dev/null | wc -l)
+          count=$(ls dist/*.7z 2>/dev/null | wc -l)
           if [ "$count" -eq 0 ]; then
-            echo "::error::No artifacts found in build result!"
+            echo "::error::No .7z artifacts found in build result!"
             exit 1
           fi
           echo "Found $count artifact(s)."
@@ -64,8 +63,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: hyper-recovery-builds
-          path: |
-            dist/*.7z
-            dist/*.iso
+          path: dist/*.7z
           if-no-files-found: error
           retention-days: 90

@@ -70,29 +70,21 @@
           exit 1
         fi
 
-        # Process each file
+        # Compress each file individually and place directly in $out
         while IFS= read -r file; do
           if [ -z "$file" ]; then continue; fi
           
           base_name=$(basename "$file")
-          extension="''${base_name##*.}"
+          echo "Compressing $base_name with 7zz..."
+          # -mx=9: Ultra compression (LZMA2)
+          # -mmt: Multi-threading
+          # -ms=on: Solid compression (better for many small files, though these are large single files)
+          7zz a -t7z -mx=9 -mmt -ms=on "$out/''${base_name}.7z" "$file"
           
-          if [[ "$extension" == "iso" ]]; then
-            # ISOs are already compressed (SquashFS) and ready for DD.
-            # Skip double compression to save time and give user immediate access.
-            echo "Copying $base_name directly (no extra compression)..."
-            cp "$file" "$out/$base_name"
-          else
-            # Compress other formats (qcow2, raw, etc) to save space
-            echo "Compressing $base_name with 7zz (modern)..."
-            # -mx=9: Ultra compression
-            # -mmt: Multi-threading (default in 7zz)
-            7zz a -t7z -mx=9 -mmt "$out/''${base_name}.7z" "$file"
-            echo "Created $out/''${base_name}.7z"
-          fi
+          echo "Created $out/''${base_name}.7z"
         done <<< "$files"
         
-        echo "Processing complete. Artifacts:"
+        echo "Compression complete. Artifacts:"
         ls -lh $out/
       '';
     };
