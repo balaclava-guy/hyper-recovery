@@ -274,12 +274,11 @@ jobs:
           EFI_VARS="/tmp/OVMF_VARS_PREVIEW.fd"
           cp "$OVMF_VARS_TEMPLATE" "$EFI_VARS"
 
-          # Start QEMU headless with VNC on :1 (5901)
+          # Start QEMU with QXL VGA (VNC-friendly) on :1 (5901)
           qemu-system-x86_64 \
             -m 2048 -smp 2 \
-            -device virtio-gpu-pci \
-            -display none \
-            -vnc :1 \
+            -vga qxl \
+            -display vnc=:1 \
             -serial stdio \
             -drive file="$ISO_PATH",format=raw,if=none,id=drive-cd,readonly=on \
             -device ahci,id=ahci \
