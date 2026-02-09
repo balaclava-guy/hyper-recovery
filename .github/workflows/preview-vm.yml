@@ -74,13 +74,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Create pending deployment
+          # Create pending deployment using JSON for robust type handling
           DEPLOYMENT_ID=$(gh api repos/${{ github.repository }}/deployments \
-            -f ref="${{ github.ref }}" \
-            -f environment="preview-vm" \
-            -F auto_merge=false \
-            -f required_contexts[]="" \
-            --jq '.id')
+            --input - \
+            --jq '.id' <<EOF
+          {
+            "ref": "${{ github.ref }}",
+            "environment": "preview-vm",
+            "auto_merge": false,
+            "required_contexts": []
+          }
+          EOF
+          )
           echo "DEPLOYMENT_ID=$DEPLOYMENT_ID" >> $GITHUB_ENV
           
           # Set status to in_progress
