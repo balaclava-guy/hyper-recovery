@@ -95,22 +95,32 @@ jobs:
           websockify --web="$NOVNC_DIR" 6080 127.0.0.1:5901 > /tmp/websockify.log 2>&1 &
           WSOCK_PID=$!
 
-          # Launch Cloudflare Tunnel (unauthenticated, ephemeral)
-          cloudflared tunnel --url http://localhost:6080 --no-autoupdate > /tmp/cloudflared.log 2>&1 &
-          CF_PID=$!
-
-          # Wait for URL
+          # Launch Cloudflare Tunnel (unauthenticated, ephemeral) with retries
           PREVIEW_URL=""
-          for i in {1..30}; do
-            if grep -Eo 'https://[0-9a-zA-Z.-]+\.trycloudflare\.com' /tmp/cloudflared.log | head -1 >/tmp/preview_url.txt; then
-              PREVIEW_URL=$(cat /tmp/preview_url.txt)
-              if [ -n "$PREVIEW_URL" ]; then break; fi
+          for attempt in {1..5}; do
+            : > /tmp/cloudflared.log
+            cloudflared tunnel --url http://localhost:6080 --no-autoupdate > /tmp/cloudflared.log 2>&1 &
+            CF_PID=$!
+
+            for i in {1..30}; do
+              if grep -Eo 'https://[0-9a-zA-Z.-]+\.trycloudflare\.com' /tmp/cloudflared.log | head -1 >/tmp/preview_url.txt; then
+                PREVIEW_URL=$(cat /tmp/preview_url.txt)
+                if [ -n "$PREVIEW_URL" ]; then break; fi
+              fi
+              sleep 1
+            done
+
+            if [ -n "$PREVIEW_URL" ]; then
+              break
             fi
-            sleep 1
+
+            echo "cloudflared attempt $attempt failed; retrying..." >&2
+            kill $CF_PID || true
+            sleep 2
           done
 
           if [ -z "$PREVIEW_URL" ]; then
-            echo "Failed to obtain Cloudflare Tunnel URL" >&2
+            echo "Failed to obtain Cloudflare Tunnel URL after retries" >&2
             tail -n 50 /tmp/cloudflared.log || true
             exit 1
           fi
