@@ -21,6 +21,9 @@ jobs:
   preview-vm:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+      deployments: write
     steps:
       - name: Safety notice
         run: |
@@ -67,8 +70,23 @@ jobs:
       - name: Start preview VM with VNC + noVNC + tunnel
         env:
           PREVIEW_DURATION: ${{ inputs.preview_duration }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+
+          # Create pending deployment
+          DEPLOYMENT_ID=$(gh api repos/${{ github.repository }}/deployments \
+            -f ref="${{ github.ref }}" \
+            -f environment="preview-vm" \
+            -f auto_merge=false \
+            -f required_contexts[]="" \
+            --jq '.id')
+          echo "DEPLOYMENT_ID=$DEPLOYMENT_ID" >> $GITHUB_ENV
+          
+          # Set status to in_progress
+          gh api repos/${{ github.repository }}/deployments/$DEPLOYMENT_ID/statuses \
+            -f state="in_progress" \
+            -f description="Starting VM and Tunnel..."
 
           ISO_PATH="$ISO_PATH"
 
@@ -149,6 +167,12 @@ jobs:
           echo "Open in browser: $PREVIEW_URL/vnc.html?autoconnect=true&resize=scale&path=websockify" | tee -a $GITHUB_STEP_SUMMARY
           echo "$PREVIEW_URL/vnc.html?autoconnect=true&resize=scale&path=websockify" > preview-url.txt
 
+          # Update Deployment Status to Success with URL
+          gh api repos/${{ github.repository }}/deployments/$DEPLOYMENT_ID/statuses \
+            -f state="success" \
+            -f environment_url="$PREVIEW_URL/vnc.html?autoconnect=true&resize=scale&path=websockify" \
+            -f description="Preview is ready"
+
           echo "Preview will stay up for $PREVIEW_DURATION seconds or until the viewer disconnects (idle timeout)."
 
           IDLE_TIMEOUT=${IDLE_TIMEOUT:-300}
@@ -183,6 +207,17 @@ jobs:
           done
 
           kill $CF_PID $WSOCK_PID $QEMU_PID || true
+
+      - name: Mark Deployment as Inactive
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "$DEPLOYMENT_ID" ]; then
+            gh api repos/${{ github.repository }}/deployments/$DEPLOYMENT_ID/statuses \
+              -f state="inactive" \
+              -f description="Preview stopped" || true
+          fi
 
       - name: Upload preview logs
         if: always()
