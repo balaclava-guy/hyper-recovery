@@ -69,9 +69,9 @@ jobs:
           # Start QEMU with QXL VGA (VNC-friendly) on :1 (5901)
           qemu-system-x86_64 \
             -m 2048 -smp 2 \
-            -vga qxl \
+            -vga std \
             -display vnc=:1 \
-            -serial stdio \
+            -serial file:/tmp/qemu-serial.log \
             -drive file="$ISO_PATH",format=raw,if=none,id=drive-cd,readonly=on \
             -device ahci,id=ahci \
             -device ide-cd,drive=drive-cd,bus=ahci.0 \
