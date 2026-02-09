@@ -10,7 +10,7 @@ on:
       preview_duration:
         description: "Seconds to keep the preview tunnel alive"
         required: false
-        default: "120"
+        default: "600"
 
 jobs:
   preview-vm:
@@ -29,6 +29,10 @@ jobs:
 
       - name: Install Nix
         uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            substituters = https://cache.nixos.org https://cache.garnix.io
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=
 
       - name: Install QEMU + noVNC + cloudflared
         run: |
@@ -44,7 +48,7 @@ jobs:
       - name: Build ISO (main)
         run: |
           set -euo pipefail
-          nix build .#packages.x86_64-linux.usb --out-link result-iso --print-build-logs --refresh
+          nix build --accept-flake-config .#packages.x86_64-linux.usb --out-link result-iso --print-build-logs --refresh
           ISO_PATH=$(ls result-iso/iso/*.iso | head -1)
           echo "ISO_PATH=$ISO_PATH" >> $GITHUB_ENV
 
@@ -132,7 +136,7 @@ jobs:
 
           echo "Preview will stay up for $PREVIEW_DURATION seconds or until the viewer disconnects (idle timeout)."
 
-          IDLE_TIMEOUT=${IDLE_TIMEOUT:-15}
+          IDLE_TIMEOUT=${IDLE_TIMEOUT:-300}
           deadline=$(( $(date +%s) + PREVIEW_DURATION ))
           no_client_since=$(date +%s)
 
