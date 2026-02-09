@@ -11,6 +11,11 @@ on:
         description: "Seconds to keep the preview tunnel alive"
         required: false
         default: "600"
+      debug:
+        description: "Enable debug mode (verbose logs, usb-debug image)"
+        required: false
+        default: "true"
+        type: boolean
 
 jobs:
   preview-vm:
@@ -45,10 +50,17 @@ jobs:
           sudo dpkg -i "$CLOUDFLARED_DEB" || sudo apt-get install -f -y
           cloudflared --version
 
-      - name: Build ISO (main)
+      - name: Build ISO
         run: |
           set -euo pipefail
-          nix build --accept-flake-config .#packages.x86_64-linux.usb --out-link result-iso --print-build-logs --refresh
+          if [ "${{ inputs.debug }}" == "true" ]; then
+            PKG="usb-debug"
+            echo "Building DEBUG image..."
+          else
+            PKG="usb"
+            echo "Building STANDARD image..."
+          fi
+          nix build --accept-flake-config .#packages.x86_64-linux.$PKG --out-link result-iso --print-build-logs --refresh
           ISO_PATH=$(ls result-iso/iso/*.iso | head -1)
           echo "ISO_PATH=$ISO_PATH" >> $GITHUB_ENV
 
