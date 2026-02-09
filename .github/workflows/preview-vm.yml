@@ -70,12 +70,12 @@ jobs:
           EFI_VARS="/tmp/OVMF_VARS_PREVIEW.fd"
           cp "$OVMF_VARS_TEMPLATE" "$EFI_VARS"
 
-          # Start QEMU with QXL VGA (VNC-friendly) on :1 (5901)
+          # Start QEMU with virtio-gpu-pci (matching visual-smoke)
           qemu-system-x86_64 \
             -m 2048 -smp 2 \
-            -vga std \
-            -global VGA.edid=on \
-            -display vnc=:1 \
+            -device virtio-gpu-pci \
+            -display none \
+            -vnc :1 \
             -serial file:/tmp/qemu-serial.log \
             -drive file="$ISO_PATH",format=raw,if=none,id=drive-cd,readonly=on \
             -device ahci,id=ahci \
