@@ -117,7 +117,7 @@ let
       # Copy theme files (script, plymouth config, images)
       cp snosu-hyper-recovery.plymouth $out/share/plymouth/themes/snosu-hyper-recovery/
       cp snosu-hyper-recovery.script $out/share/plymouth/themes/snosu-hyper-recovery/
-      cp -r images $out/share/plymouth/themes/snosu-hyper-recovery/
+      cp *.png $out/share/plymouth/themes/snosu-hyper-recovery/
       
       # Copy and install font
       mkdir -p $out/share/fonts/truetype
@@ -132,12 +132,10 @@ let
         (echo "ERROR: .plymouth file missing" && exit 1)
       test -f $out/share/plymouth/themes/snosu-hyper-recovery/snosu-hyper-recovery.script || \
         (echo "ERROR: .script file missing" && exit 1)
-      test -d $out/share/plymouth/themes/snosu-hyper-recovery/images || \
-        (echo "ERROR: images directory missing" && exit 1)
       
       # Count animation frames
-      frame_count=$(ls -1 $out/share/plymouth/themes/snosu-hyper-recovery/images/*.png 2>/dev/null | wc -l)
-      echo "Found $frame_count PNG files in images directory"
+      frame_count=$(ls -1 $out/share/plymouth/themes/snosu-hyper-recovery/*.png 2>/dev/null | wc -l)
+      echo "Found $frame_count PNG files in theme directory"
       
       # Fix permissions
       chmod -R +r $out/share/plymouth/themes/snosu-hyper-recovery
@@ -190,6 +188,7 @@ in
     "rd.udev.log_level=3" 
     "udev.log_priority=3" 
     "vt.global_cursor_default=0"
+    "fbcon=nodefer"                   # Take over framebuffer early
     "plymouth.ignore-serial-consoles"  # Prevent serial console interference
     "iwlwifi.power_save=0"
   ];
