@@ -34,7 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 qemu-utils ovmf novnc websockify curl
+          sudo apt-get install -y qemu-system-x86 qemu-utils ovmf novnc websockify curl lsof
 
           CLOUDFLARED_DEB="cloudflared-linux-amd64.deb"
           curl -fsSL -o "$CLOUDFLARED_DEB" https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
@@ -130,8 +130,38 @@ jobs:
           echo "Open in browser: $PREVIEW_URL/vnc.html?autoconnect=true&resize=scale&path=websockify" | tee -a $GITHUB_STEP_SUMMARY
           echo "$PREVIEW_URL/vnc.html?autoconnect=true&resize=scale&path=websockify" > preview-url.txt
 
-          echo "Preview will stay up for $PREVIEW_DURATION seconds. Press Ctrl+C to end early."
-          sleep "$PREVIEW_DURATION"
+          echo "Preview will stay up for $PREVIEW_DURATION seconds or until the viewer disconnects (idle timeout)."
+
+          IDLE_TIMEOUT=${IDLE_TIMEOUT:-15}
+          deadline=$(( $(date +%s) + PREVIEW_DURATION ))
+          no_client_since=$(date +%s)
+
+          while true; do
+            now=$(date +%s)
+            if [ $now -ge $deadline ]; then
+              echo "Reached preview deadline ($PREVIEW_DURATION s). Exiting."
+              break
+            fi
+
+            # Detect active VNC client (websockify -> qemu VNC)
+            if lsof -iTCP:5901 -sTCP:ESTABLISHED 2>/dev/null | tail -n +2 | grep -q .; then
+              no_client_since=$now
+            else
+              idle_for=$(( now - no_client_since ))
+              if [ $idle_for -ge $IDLE_TIMEOUT ]; then
+                echo "No viewer for ${IDLE_TIMEOUT}s; exiting early."
+                break
+              fi
+            fi
+
+            # Exit early if QEMU died
+            if ! kill -0 $QEMU_PID 2>/dev/null; then
+              echo "QEMU exited; stopping preview."
+              break
+            fi
+
+            sleep 3
+          done
 
           kill $CF_PID $WSOCK_PID $QEMU_PID || true
 
