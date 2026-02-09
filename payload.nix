@@ -308,7 +308,14 @@ in
     theme = "snosu-hyper-recovery";
     themePackages = [ snosuPlymouthTheme ];
     font = "${snosuPlymouthTheme}/share/fonts/truetype/undefined-medium.ttf";
+    extraConfig = ''
+      DebugFile=/dev/ttyS0
+      DebugLevel=info
+    '';
   };
+
+  # Ensure virtio_gpu is available for early KMS
+  boot.initrd.availableKernelModules = [ "virtio_gpu" "virtio_pci" ];
 
   boot.loader.grub = {
     enable = true;
