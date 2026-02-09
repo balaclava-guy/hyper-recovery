@@ -60,8 +60,11 @@ jobs:
 
           ISO_PATH="$ISO_PATH"
 
-          # Locate firmware
-          OVMF_CODE=$(find /usr/share -name "OVMF_CODE*.fd" 2>/dev/null | grep -v snakeoil | grep -v ms | head -1)
+          # Locate firmware (match visual-smoke logic: prefer non-secureboot)
+          OVMF_CODE=$(find /usr/share -name "OVMF_CODE*.fd" 2>/dev/null | grep -v snakeoil | grep -v ms | grep -v secboot | head -1)
+          if [ -z "$OVMF_CODE" ]; then
+            OVMF_CODE=$(find /usr/share -name "OVMF_CODE*.fd" 2>/dev/null | grep -v snakeoil | grep -v ms | head -1)
+          fi
           OVMF_VARS_TEMPLATE=$(find /usr/share -name "OVMF_VARS*.fd" 2>/dev/null | grep -v snakeoil | grep -v ms | head -1)
           if [ -z "$OVMF_CODE" ] || [ -z "$OVMF_VARS_TEMPLATE" ]; then
             echo "OVMF firmware not found" >&2
@@ -176,6 +179,7 @@ jobs:
           name: preview-vm-logs
           path: |
             /tmp/qemu-preview.log
+            /tmp/qemu-serial.log
             /tmp/websockify.log
             /tmp/cloudflared.log
             preview-url.txt
