@@ -241,7 +241,13 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 qemu-utils ovmf novnc websockify cloudflared
+          sudo apt-get install -y qemu-system-x86 qemu-utils ovmf novnc websockify curl
+
+          # Install cloudflared (deb) from GitHub releases to avoid repo availability issues
+          CLOUDFLARED_DEB="cloudflared-linux-amd64.deb"
+          curl -fsSL -o "$CLOUDFLARED_DEB" https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i "$CLOUDFLARED_DEB" || sudo apt-get install -f -y
+          cloudflared --version
 
       - name: Build ISO (main)
         run: |
