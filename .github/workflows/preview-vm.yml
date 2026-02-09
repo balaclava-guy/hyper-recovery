@@ -99,7 +99,6 @@ jobs:
             -device ahci,id=ahci \
             -device ide-cd,drive=drive-cd,bus=ahci.0 \
             -boot order=d \
-            -no-reboot \
             -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
             -drive if=pflash,format=raw,file="$EFI_VARS" \
             > /tmp/qemu-preview.log 2>&1 &
