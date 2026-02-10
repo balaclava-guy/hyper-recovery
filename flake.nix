@@ -16,7 +16,7 @@
         ./nix/flake-modules/packages.nix
         ./nix/flake-modules/nixos-images.nix
         ./nix/flake-modules/apps.nix
-        # TODO: Add devshells.nix in next phase
+        ./nix/flake-modules/devshells.nix
       ];
 
       flake = {
@@ -41,19 +41,6 @@
         };
       };
 
-      # Per-system configuration
-      perSystem = { pkgs, system, lib, ... }: {
-        # Basic dev shell (numtide/devshell integration comes in next phase)
-        devShells.default = pkgs.mkShell {
-          packages =
-            [ pkgs.p7zip ]
-            ++ lib.optionals (system == "aarch64-darwin") [
-              pkgs.python3
-              pkgs.qemu
-              pkgs.mtools
-              pkgs.xorriso
-            ];
-        };
-      };
+      # Per-system configuration handled by imported modules
     };
 }
