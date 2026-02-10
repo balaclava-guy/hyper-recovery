@@ -72,6 +72,10 @@
             cp ${./scripts/theme-vm} $out/bin/theme-vm
             chmod +x $out/bin/theme-vm
 
+            # Ensure the packaged app does not rely on a host Python.
+            substituteInPlace $out/bin/theme-vm \
+              --replace-fail '#!/usr/bin/env python3' '#!${pkgs.python3}/bin/python3'
+
             substituteInPlace $out/bin/theme-vm \
               --replace-fail "@qemu_system_aarch64@" "${pkgs.qemu}/bin/qemu-system-aarch64" \
               --replace-fail "@qemu_img@" "${pkgs.qemu}/bin/qemu-img" \

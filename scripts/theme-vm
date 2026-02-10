@@ -334,6 +334,376 @@ EOF
     )
 
 
+def _write_nixos_module(dest: Path) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(
+        textwrap.dedent(
+            """\
+            # Minimal NixOS module to apply the GRUB + Plymouth themes from /etc/hyper-theme-src.
+            #
+            # /etc/nixos/hyper-theme-settings.nix is managed by hyper-theme-sync and should contain:
+            #   { holdSeconds = 8; grubTimeout = 15; }
+            { config, lib, pkgs, ... }:
+
+            let
+              settingsPath = /etc/nixos/hyper-theme-settings.nix;
+              settings =
+                if builtins.pathExists settingsPath
+                then import settingsPath
+                else { holdSeconds = 8; grubTimeout = 15; };
+
+              holdSeconds = settings.holdSeconds or 8;
+              grubTimeout = settings.grubTimeout or 15;
+
+              themeSrc = /etc/hyper-theme-src;
+
+              grubTheme = pkgs.stdenvNoCC.mkDerivation {
+                pname = "snosu-hyper-recovery-grub-theme";
+                version = "0";
+                src = themeSrc;
+                nativeBuildInputs = [ pkgs.grub2 pkgs.gnused ];
+                installPhase = ''
+                  set -euo pipefail
+                  mkdir -p "$out"
+                  cp -R "themes/grub/hyper-recovery/"* "$out/"
+
+                  font_src="$src/assets/fonts/undefined-medium/undefined-medium.ttf"
+                  ${pkgs.grub2}/bin/grub-mkfont -s 12 -o "$out/undefined_medium_12.pf2" "$font_src"
+                  ${pkgs.grub2}/bin/grub-mkfont -s 14 -o "$out/undefined_medium_14.pf2" "$font_src"
+                  ${pkgs.grub2}/bin/grub-mkfont -s 16 -o "$out/undefined_medium_16.pf2" "$font_src"
+                  ${pkgs.grub2}/bin/grub-mkfont -s 24 -o "$out/undefined_medium_24.pf2" "$font_src"
+                  ${pkgs.grub2}/bin/grub-mkfont -s 28 -o "$out/undefined_medium_28.pf2" "$font_src"
+
+                  sed -i 's/Hyper Street Fighter 2 Regular/Undefined Medium/g' "$out/theme.txt" || true
+                  sed -i 's/Hyper Fighting Regular/Undefined Medium/g' "$out/theme.txt" || true
+                '';
+              };
+
+              plymouthTheme = pkgs.stdenvNoCC.mkDerivation {
+                pname = "snosu-hyper-recovery-plymouth-theme";
+                version = "0";
+                src = themeSrc;
+                nativeBuildInputs = [ pkgs.gnused ];
+                installPhase = ''
+                  set -euo pipefail
+                  mkdir -p "$out/share/plymouth/themes/snosu-hyper-recovery"
+                  dest="$out/share/plymouth/themes/snosu-hyper-recovery"
+                  cp -R "themes/plymouth/hyper-recovery/"* "$dest/"
+                  cp "$src/assets/fonts/undefined-medium/undefined-medium.ttf" "$dest/undefined-medium.ttf" || true
+
+                  if [ -f "$dest/snosu-hyper-recovery.plymouth" ]; then
+                    sed -i "s|^ImageDir=.*|ImageDir=$dest|" "$dest/snosu-hyper-recovery.plymouth" || true
+                  fi
+                '';
+              };
+
+              hyperThemeSync = pkgs.writeShellScript "hyper-theme-sync" ''
+                set -euo pipefail
+
+                state_dir=/var/lib/hyper-theme-sync
+                mkdir -p "$state_dir"
+                stamp="$state_dir/last.sha256"
+
+                find_theme_dev() {
+                  while IFS= read -r dev; do
+                    mnt="$(mktemp -d)"
+                    if ${pkgs.util-linux}/bin/mount -t vfat -o ro "$dev" "$mnt" 2>/dev/null; then
+                      if [ -f "$mnt/THEME_SYNC_MARKER" ]; then
+                        echo "$dev"
+                        ${pkgs.util-linux}/bin/umount "$mnt" || true
+                        rmdir "$mnt" || true
+                        return 0
+                      fi
+                      ${pkgs.util-linux}/bin/umount "$mnt" || true
+                    fi
+                    rmdir "$mnt" || true
+                  done < <(${pkgs.util-linux}/bin/lsblk -pnro NAME,FSTYPE,TYPE | ${pkgs.gawk}/bin/awk '$2=="vfat"{print $1}')
+                  return 1
+                }
+
+                dev="$(find_theme_dev || true)"
+                if [ -z "${dev:-}" ]; then
+                  echo "hyper-theme-sync: no theme drive found; skipping" >&2
+                  exit 0
+                fi
+
+                mnt=/mnt/hyper-theme
+                mkdir -p "$mnt"
+                ${pkgs.util-linux}/bin/mount -t vfat -o ro "$dev" "$mnt"
+                trap '${pkgs.util-linux}/bin/umount "$mnt" 2>/dev/null || true' EXIT
+
+                hold_seconds="$(${pkgs.coreutils}/bin/cat "$mnt/HOLD_SECONDS" 2>/dev/null || echo 8)"
+                if ! [[ "$hold_seconds" =~ ^[0-9]+$ ]]; then hold_seconds=8; fi
+
+                grub_timeout="$(${pkgs.coreutils}/bin/cat "$mnt/GRUB_TIMEOUT" 2>/dev/null || echo 15)"
+                if ! [[ "$grub_timeout" =~ ^-?[0-9]+$ ]]; then grub_timeout=15; fi
+
+                new_sha="$(
+                  (
+                    cd "$mnt"
+                    ${pkgs.findutils}/bin/find themes/grub/hyper-recovery themes/plymouth/hyper-recovery assets/fonts/undefined-medium -type f -print0 \
+                      | LC_ALL=C ${pkgs.coreutils}/bin/sort -z \
+                      | ${pkgs.findutils}/bin/xargs -0 ${pkgs.coreutils}/bin/sha256sum
+                    printf "hold_seconds=%s\ngrub_timeout=%s\n" "$hold_seconds" "$grub_timeout"
+                  ) | ${pkgs.coreutils}/bin/sha256sum | ${pkgs.gawk}/bin/awk '{print $1}'
+                )"
+
+                old_sha="$(${pkgs.coreutils}/bin/cat "$stamp" 2>/dev/null || true)"
+                if [ -n "$old_sha" ] && [ "$old_sha" = "$new_sha" ]; then
+                  echo "hyper-theme-sync: no changes" >&2
+                  exit 0
+                fi
+
+                echo "hyper-theme-sync: syncing theme sources..." >&2
+                ${pkgs.coreutils}/bin/rm -rf /etc/hyper-theme-src
+                ${pkgs.coreutils}/bin/mkdir -p /etc/hyper-theme-src
+                ${pkgs.coreutils}/bin/cp -R "$mnt/themes" /etc/hyper-theme-src/
+                ${pkgs.coreutils}/bin/cp -R "$mnt/assets" /etc/hyper-theme-src/
+
+                # Feed settings into the module via a simple import file.
+                ${pkgs.coreutils}/bin/printf '{ holdSeconds = %s; grubTimeout = %s; }\\n' \
+                  "$hold_seconds" "$grub_timeout" > /etc/nixos/hyper-theme-settings.nix
+
+                echo "hyper-theme-sync: rebuilding boot config..." >&2
+                /run/current-system/sw/bin/nixos-rebuild boot --fast
+
+                ${pkgs.coreutils}/bin/echo "$new_sha" > "$stamp"
+                ${pkgs.coreutils}/bin/sync || true
+
+                echo "hyper-theme-sync: done; rebooting to show themes..." >&2
+                /run/current-system/sw/bin/systemctl reboot
+              '';
+            in
+            {
+              # Make sure GRUB is used (so we can preview the GRUB theme).
+              boot.loader.systemd-boot.enable = false;
+              boot.loader.efi.canTouchEfiVariables = true;
+              boot.loader.efi.efiSysMountPoint = "/boot";
+
+              boot.loader.grub = {
+                enable = true;
+                efiSupport = true;
+                device = "nodev";
+                efiInstallAsRemovable = true;
+                theme = grubTheme;
+
+                # We'll override GRUB's real timeout via extraConfig; keep a non-negative value here.
+                timeout = 1;
+
+                extraConfig = ''
+                  set timeout_style=menu
+                  set timeout=${if grubTimeout < 0 then "-1" else toString grubTimeout}
+
+                  insmod all_video
+                  insmod gfxterm
+                  terminal_output gfxterm
+                  set gfxmode=auto
+                '';
+              };
+
+              boot.kernelParams = [ "quiet" "splash" "plymouth.ignore-serial-consoles" ];
+
+              boot.plymouth.enable = true;
+              boot.plymouth.theme = "snosu-hyper-recovery";
+              boot.plymouth.themePackages = [ plymouthTheme ];
+
+              # Keep Plymouth visible for theme iteration.
+              environment.etc."systemd/system/plymouth-quit.service.d/hyper-hold.conf".text = ''
+                [Service]
+                ExecStartPre=${pkgs.coreutils}/bin/sleep ${toString holdSeconds}
+              '';
+
+              # Run on each boot; if the theme tree changed, rebuild boot assets and reboot.
+              systemd.services.hyper-theme-sync = {
+                description = "Hyper theme sync (GRUB + Plymouth)";
+                wantedBy = [ "multi-user.target" ];
+                after = [ "network-online.target" ];
+                wants = [ "network-online.target" ];
+                serviceConfig = {
+                  Type = "oneshot";
+                  ExecStart = hyperThemeSync;
+                };
+              };
+
+              # Give the sync service the tools it expects.
+              environment.systemPackages = [
+                pkgs.util-linux
+                pkgs.findutils
+                pkgs.gawk
+                pkgs.gnused
+              ];
+            }
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_nixos_install_script(dest: Path) -> None:
+    dest.write_text(
+        textwrap.dedent(
+            """\
+            #!/usr/bin/env bash
+            set -euo pipefail
+
+            disk=/dev/vda
+
+            find_theme_dev() {
+              while IFS= read -r dev; do
+                mnt="$(mktemp -d)"
+                if mount -t vfat -o ro "$dev" "$mnt" 2>/dev/null; then
+                  if [ -f "$mnt/THEME_SYNC_MARKER" ]; then
+                    echo "$dev"
+                    umount "$mnt" || true
+                    rmdir "$mnt" || true
+                    return 0
+                  fi
+                  umount "$mnt" || true
+                fi
+                rmdir "$mnt" || true
+              done < <(lsblk -pnro NAME,FSTYPE,TYPE | awk '$2=="vfat"{print $1}')
+              return 1
+            }
+
+            if [ "$(id -u)" -ne 0 ]; then
+              echo "Re-running as root (sudo)..." >&2
+              exec sudo -E "$0" "$@"
+            fi
+
+            if [ ! -b "$disk" ]; then
+              echo "Expected install disk $disk to exist. (Did QEMU attach the virtio disk?)" >&2
+              exit 1
+            fi
+
+            dev="$(find_theme_dev || true)"
+            if [ -z "${dev:-}" ]; then
+              echo "Could not locate the theme drive (vfat) containing THEME_SYNC_MARKER." >&2
+              echo "Make sure theme-vm attached the FAT share drive." >&2
+              exit 1
+            fi
+
+            theme_mnt=/tmp/hyper-theme
+            mkdir -p "$theme_mnt"
+            mount -t vfat -o ro "$dev" "$theme_mnt"
+            trap 'umount "$theme_mnt" 2>/dev/null || true' EXIT
+
+            hold_seconds="$(cat "$theme_mnt/HOLD_SECONDS" 2>/dev/null || echo 8)"
+            if ! [[ "$hold_seconds" =~ ^[0-9]+$ ]]; then hold_seconds=8; fi
+
+            grub_timeout="$(cat "$theme_mnt/GRUB_TIMEOUT" 2>/dev/null || echo 15)"
+            if ! [[ "$grub_timeout" =~ ^-?[0-9]+$ ]]; then grub_timeout=15; fi
+
+            state_version="$(nixos-version 2>/dev/null | cut -d. -f1-2)"
+            if ! [[ "$state_version" =~ ^[0-9]+\\.[0-9]+$ ]]; then
+              state_version="24.11"
+            fi
+
+            echo "Installing NixOS to $disk (stateVersion=$state_version)..." >&2
+
+            set +e
+            umount /mnt/boot 2>/dev/null
+            umount /mnt 2>/dev/null
+            set -e
+
+            parted -s "$disk" -- mklabel gpt
+            parted -s "$disk" -- mkpart ESP fat32 1MiB 512MiB
+            parted -s "$disk" -- set 1 esp on
+            parted -s "$disk" -- mkpart primary ext4 512MiB 100%
+
+            mkfs.fat -F 32 "${disk}1"
+            mkfs.ext4 -F "${disk}2"
+
+            mount "${disk}2" /mnt
+            mkdir -p /mnt/boot
+            mount "${disk}1" /mnt/boot
+
+            nixos-generate-config --root /mnt
+
+            mkdir -p /mnt/etc/nixos
+            cp "$theme_mnt/nixos/hyper-theme.nix" /mnt/etc/nixos/hyper-theme.nix
+
+            cat > /mnt/etc/nixos/hyper-theme-settings.nix <<EOF
+            { holdSeconds = $hold_seconds; grubTimeout = $grub_timeout; }
+            EOF
+
+            cat > /mnt/etc/nixos/configuration.nix <<EOF
+            { config, pkgs, ... }:
+            {
+              imports = [
+                ./hardware-configuration.nix
+                ./hyper-theme.nix
+              ];
+
+              networking.hostName = "hyper-theme-vm";
+              time.timeZone = "UTC";
+
+              users.users.theme = {
+                isNormalUser = true;
+                extraGroups = [ "wheel" ];
+                initialPassword = "theme";
+              };
+              security.sudo.wheelNeedsPassword = false;
+
+              services.openssh.enable = true;
+              services.openssh.settings.PasswordAuthentication = true;
+              services.openssh.settings.PermitRootLogin = "no";
+
+              nix.settings.experimental-features = [ "nix-command" "flakes" ];
+
+              system.stateVersion = "$state_version";
+            }
+            EOF
+
+            rm -rf /mnt/etc/hyper-theme-src
+            mkdir -p /mnt/etc/hyper-theme-src
+            cp -R "$theme_mnt/themes" /mnt/etc/hyper-theme-src/
+            cp -R "$theme_mnt/assets" /mnt/etc/hyper-theme-src/
+
+            nixos-install --no-root-passwd
+
+            echo "Install complete. Rebooting..." >&2
+            reboot
+            """
+        ),
+        encoding="utf-8",
+    )
+    dest.chmod(0o755)
+
+
+def _write_nixos_install_readme(dest: Path) -> None:
+    dest.write_text(
+        textwrap.dedent(
+            """\
+            NixOS install (one-time)
+            =======================
+
+            This VM base boots a minimal NixOS aarch64 ISO and installs to the attached virtio disk.
+            The installer script is on this FAT share drive:
+
+              hyper-nixos-install
+
+            In the NixOS installer environment, run:
+
+              sudo -i
+              mkdir -p /mnt/theme
+              for dev in $(lsblk -pnro NAME,FSTYPE,TYPE | awk '$2=="vfat"{print $1}'); do
+                mount -t vfat -o ro "$dev" /mnt/theme 2>/dev/null || continue
+                if [ -f /mnt/theme/THEME_SYNC_MARKER ]; then
+                  break
+                fi
+                umount /mnt/theme 2>/dev/null || true
+              done
+              bash /mnt/theme/hyper-nixos-install
+
+            After install, re-run:
+
+              nix run .#theme-vm -- --base nixos
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
 def _host_is_darwin_arm64() -> bool:
     return sys.platform == "darwin" and platform.machine() == "arm64"
 
@@ -348,10 +718,17 @@ def main() -> int:
 
             On macOS arm64: boots an Ubuntu ARM64 cloud VM in QEMU+HVF, syncs this repo's
             GRUB/Plymouth themes into it, and reboots once when changes are detected.
+
+            You can also use a minimal NixOS aarch64 ISO as the base to get a more realistic
+            (NixOS) boot pipeline. First run will require installing NixOS inside the VM.
             """
         ),
     )
-    p.add_argument("--fresh", action="store_true", help="Recreate overlay disk and seed ISO")
+    p.add_argument(
+        "--fresh",
+        action="store_true",
+        help="Recreate cached VM state (Ubuntu overlay, NixOS disk, seed ISO, UEFI vars)",
+    )
     p.add_argument("--headless", action="store_true", help="Run QEMU with -nographic")
     p.add_argument("--ssh", action="store_true", help="Print SSH command (localhost:2222)")
     p.add_argument(
@@ -375,6 +752,12 @@ def main() -> int:
     p.add_argument("--repo", default=".", help="Path to the hyper-recovery repo (defaults to current directory)")
     p.add_argument("--cache-dir", default=os.environ.get("HYPER_THEME_VM_DIR", ""), help="Cache dir override")
     p.add_argument(
+        "--base",
+        choices=["ubuntu", "nixos"],
+        default=os.environ.get("HYPER_THEME_VM_BASE", "ubuntu"),
+        help="Guest base to use (default: ubuntu). 'nixos' boots a minimal NixOS aarch64 ISO and installs to a cached disk.",
+    )
+    p.add_argument(
         "--base-image",
         default=os.environ.get("HYPER_THEME_BASE_IMG", ""),
         help="Path to a pre-downloaded Ubuntu ARM64 cloud image (skips download)",
@@ -386,6 +769,19 @@ def main() -> int:
             "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-arm64.img",
         ),
         help="Ubuntu cloud image URL (arm64)",
+    )
+    p.add_argument(
+        "--nixos-url",
+        default=os.environ.get(
+            "NIXOS_MINIMAL_ISO_URL",
+            "https://channels.nixos.org/nixos-unstable/latest-nixos-minimal-aarch64-linux.iso",
+        ),
+        help="NixOS minimal ISO URL (aarch64-linux)",
+    )
+    p.add_argument(
+        "--nixos-install",
+        action="store_true",
+        help="Attach the NixOS installer ISO even if a cached NixOS disk exists",
     )
     args = p.parse_args()
 
@@ -412,6 +808,8 @@ def main() -> int:
     seed_iso = cache_dir / "seed.iso"
     base_img = cache_dir / "ubuntu-base.img"
     overlay_img = cache_dir / "ubuntu-overlay.qcow2"
+    nixos_iso = cache_dir / "nixos-minimal-aarch64.iso"
+    nixos_disk = cache_dir / "nixos-disk.qcow2"
     uefi_vars = cache_dir / "uefi-vars.fd"
 
     # These tokens are replaced by Nix in the flake package.
@@ -481,20 +879,9 @@ def main() -> int:
         )
 
     if args.fresh:
-        for pth in (overlay_img, seed_iso, uefi_vars):
+        for pth in (overlay_img, seed_iso, uefi_vars, nixos_disk):
             if pth.exists():
                 pth.unlink()
-
-    if args.base_image:
-        src = Path(args.base_image).expanduser().resolve()
-        if not src.is_file():
-            sys.stderr.write(f"--base-image does not exist: {src}\n")
-            return 2
-        if not base_img.exists() or _sha256_file(base_img) != _sha256_file(src):
-            shutil.copy2(src, base_img)
-    elif not base_img.exists():
-        sys.stderr.write(f"Downloading Ubuntu cloud image: {args.ubuntu_url}\n")
-        _download(args.ubuntu_url, base_img)
 
     if share_dir.exists():
         shutil.rmtree(share_dir)
@@ -512,8 +899,10 @@ def main() -> int:
         share_dir / "assets/fonts/undefined-medium/undefined-medium.ttf",
     )
 
-    _write_cloud_init(seed_dir)
-    _make_cloud_init_seed_iso(xorriso, seed_dir, seed_iso)
+    # NixOS base helper files (used only when --base nixos).
+    _write_nixos_module(share_dir / "nixos" / "hyper-theme.nix")
+    _write_nixos_install_script(share_dir / "hyper-nixos-install")
+    _write_nixos_install_readme(share_dir / "README-NIXOS-INSTALL.txt")
 
     efi_code_env = os.environ.get("HYPER_THEME_EFI_CODE", "")
     efi_vars_env = os.environ.get("HYPER_THEME_EFI_VARS", "")
@@ -559,9 +948,6 @@ def main() -> int:
     except PermissionError:
         pass
 
-    if not overlay_img.exists():
-        _run([qemu_img, "create", "-f", "qcow2", "-F", "qcow2", "-b", str(base_img), str(overlay_img)])
-
     netdev = "user,id=net0"
     if ssh_port != 0:
         netdev = f"user,id=net0,hostfwd=tcp:127.0.0.1:{ssh_port}-:22"
@@ -592,13 +978,70 @@ def main() -> int:
         f"if=pflash,format=raw,readonly=on,file={efi_code}",
         "-drive",
         f"if=pflash,format=raw,file={uefi_vars}",
-        "-drive",
-        f"if=virtio,format=qcow2,file={overlay_img}",
-        "-drive",
-        f"if=virtio,format=raw,media=cdrom,file={seed_iso}",
-        "-drive",
-        f"if=virtio,format=raw,file=fat:rw:{share_dir}",
     ]
+
+    if args.base == "ubuntu":
+        if args.base_image:
+            src = Path(args.base_image).expanduser().resolve()
+            if not src.is_file():
+                sys.stderr.write(f"--base-image does not exist: {src}\n")
+                return 2
+            if not base_img.exists() or _sha256_file(base_img) != _sha256_file(src):
+                shutil.copy2(src, base_img)
+        elif not base_img.exists():
+            sys.stderr.write(f"Downloading Ubuntu cloud image: {args.ubuntu_url}\n")
+            _download(args.ubuntu_url, base_img)
+
+        _write_cloud_init(seed_dir)
+        _make_cloud_init_seed_iso(xorriso, seed_dir, seed_iso)
+
+        if not overlay_img.exists():
+            _run([qemu_img, "create", "-f", "qcow2", "-F", "qcow2", "-b", str(base_img), str(overlay_img)])
+
+        qemu_args.extend(
+            [
+                "-drive",
+                f"if=virtio,format=qcow2,file={overlay_img}",
+                "-drive",
+                f"if=virtio,format=raw,media=cdrom,file={seed_iso}",
+            ]
+        )
+    else:
+        # NixOS base: a one-time install from a minimal ISO into a cached qcow2 disk.
+        if not nixos_iso.exists():
+            sys.stderr.write(f"Downloading NixOS minimal ISO: {args.nixos_url}\n")
+            _download(args.nixos_url, nixos_iso)
+
+        install_mode = args.nixos_install or (not nixos_disk.exists())
+        if not nixos_disk.exists():
+            sys.stderr.write("Creating NixOS disk image (16G)...\n")
+            _run([qemu_img, "create", "-f", "qcow2", str(nixos_disk), "16G"])
+        if install_mode:
+            sys.stderr.write(
+                "\nNixOS install mode:\n"
+                "1) In the NixOS installer VM, run: sudo -i\n"
+                "2) Follow README-NIXOS-INSTALL.txt on the theme drive and run: hyper-nixos-install\n\n"
+            )
+
+        qemu_args.extend(
+            [
+                "-drive",
+                f"if=virtio,format=qcow2,file={nixos_disk}",
+            ]
+        )
+        if install_mode:
+            qemu_args.extend(
+                [
+                    "-boot",
+                    "order=d",
+                    "-drive",
+                    f"if=virtio,format=raw,media=cdrom,file={nixos_iso}",
+                ]
+            )
+
+    # Attach the theme share last so it doesn't become /dev/vda.
+    qemu_args.extend(["-drive", f"if=virtio,format=raw,file=fat:rw:{share_dir}"])
+
     if args.headless:
         qemu_args.append("-nographic")
 

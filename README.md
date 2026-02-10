@@ -139,6 +139,22 @@ nix run .#theme-vm
 This boots an Ubuntu ARM64 cloud VM in QEMU+HVF, syncs the themes from this repo into the VM,
 and reboots once when changes are detected so you can see Plymouth.
 
+### NixOS Base (more realistic)
+
+If you want the guest to be NixOS (so GRUB/Plymouth wiring is closer to the real image), use:
+
+```bash
+nix run .#theme-vm -- --base nixos --fresh
+```
+
+The first boot will be the NixOS installer. Follow the instructions printed by `theme-vm`
+(or open `README-NIXOS-INSTALL.txt` on the attached theme drive) to run the one-time install.
+After that, you can just run:
+
+```bash
+nix run .#theme-vm -- --base nixos
+```
+
 ### Boot Issues
 
 - **BIOS mode not working**: Ensure the USB is bootable in legacy mode in BIOS settings
