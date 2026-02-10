@@ -53,17 +53,29 @@ jobs:
           sudo dpkg -i "$CLOUDFLARED_DEB" || sudo apt-get install -f -y
           cloudflared --version
 
-      - name: Build ISO
+      - name: Fetch/Build ISO (uses Garnix cache when available)
         run: |
           set -euo pipefail
           if [ "${{ inputs.debug }}" == "true" ]; then
             PKG="usb-debug"
-            echo "Building DEBUG image..."
+            echo "Fetching/building DEBUG image..."
           else
             PKG="usb"
-            echo "Building STANDARD image..."
+            echo "Fetching/building STANDARD image..."
           fi
-          nix build --accept-flake-config .#$PKG --out-link result-iso --print-build-logs --refresh
+          
+          echo "::notice::Will fetch from Garnix cache if this commit was already built, otherwise will build from scratch (15-30 min)"
+          
+          # Try to fetch from cache first with max-jobs=0 (no local building)
+          if nix build --accept-flake-config .#$PKG --out-link result-iso --max-jobs 0 --refresh 2>/dev/null; then
+            echo "::notice::✅ Successfully fetched from Garnix cache (no build needed)"
+          else
+            echo "::warning::Cache miss - building from scratch (this may take 15-30 minutes)"
+            echo "::warning::Consider waiting for Garnix to build this commit first"
+            # Now build with normal settings (allows local building)
+            nix build --accept-flake-config .#$PKG --out-link result-iso --print-build-logs --refresh
+          fi
+          
           ISO_PATH=$(ls result-iso/*.iso | head -1)
           echo "ISO_PATH=$ISO_PATH" >> $GITHUB_ENV
 
