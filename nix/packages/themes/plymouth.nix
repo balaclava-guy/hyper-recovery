@@ -43,7 +43,7 @@ pkgs.stdenv.mkDerivation {
   
   meta = with lib; {
     description = "Snosu Hyper Recovery Plymouth boot splash theme";
-    license = licenses.unfree;  # Adjust as needed
+    license = licenses.mit;
     platforms = platforms.linux;
   };
 }

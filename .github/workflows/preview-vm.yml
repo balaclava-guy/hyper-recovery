@@ -63,8 +63,8 @@ jobs:
             PKG="usb"
             echo "Building STANDARD image..."
           fi
-          nix build --accept-flake-config .#packages.x86_64-linux.$PKG --out-link result-iso --print-build-logs --refresh
-          ISO_PATH=$(ls result-iso/iso/*.iso | head -1)
+          nix build --accept-flake-config .#$PKG --out-link result-iso --print-build-logs --refresh
+          ISO_PATH=$(ls result-iso/*.iso | head -1)
           echo "ISO_PATH=$ISO_PATH" >> $GITHUB_ENV
 
       - name: Start preview VM with VNC + noVNC + tunnel

@@ -2,21 +2,21 @@
 
 {
   perSystem = { pkgs, system, lib, ... }: {
-    packages = {
-      # Theme packages
+    packages = lib.optionalAttrs pkgs.stdenv.isLinux {
+      # Theme packages (Linux-only: Plymouth and GRUB are Linux-specific)
       snosu-plymouth-theme = pkgs.callPackage ../packages/themes/plymouth.nix {};
       snosu-grub-theme = pkgs.callPackage ../packages/themes/grub.nix {};
       
-      # Script packages
+      # Script packages (Linux-only: depend on systemd, plymouth, util-linux)
       hyper-debug = (pkgs.callPackage ../packages/scripts {}).hyper-debug;
       hyper-hw = (pkgs.callPackage ../packages/scripts {}).hyper-hw;
       hyper-debug-serial = (pkgs.callPackage ../packages/scripts {}).hyper-debug-serial;
       save-boot-logs = (pkgs.callPackage ../packages/scripts {}).save-boot-logs;
       
-      # Firmware package
+      # Firmware package (Linux-only)
       hyper-firmware-core = (pkgs.callPackage ../packages/firmware.nix {}).hyperFirmwareCore;
-      
-      # Theme VM (existing package, keep as-is for now)
+    } // {
+      # Theme VM (cross-platform: works on any system with QEMU)
       theme-vm = pkgs.stdenvNoCC.mkDerivation {
         pname = "theme-vm";
         version = "0.1.0";

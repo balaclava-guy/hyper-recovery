@@ -27,7 +27,7 @@ pkgs.stdenv.mkDerivation {
   
   meta = with lib; {
     description = "Snosu Hyper Recovery GRUB2 boot theme";
-    license = licenses.unfree;  # Adjust as needed
+    license = licenses.mit;
     platforms = platforms.linux;
   };
 }

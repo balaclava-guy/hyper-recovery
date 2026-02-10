@@ -13,120 +13,113 @@
     image-usb-live-debug = import ../modules/image-usb-live-debug.nix;
   };
 
+  # Define NixOS configurations at flake level
+  flake.nixosConfigurations = {
+    # Regular USB Live Image (Clean, production-ready)
+    usb-live = inputs.nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        # Apply cockpit overlay
+        { nixpkgs.overlays = [ self.overlays.cockpitZfs ]; }
+        
+        # Core system modules (clean, no debug)
+        self.nixosModules.base-system
+        self.nixosModules.hardware
+        self.nixosModules.boot-branding
+        self.nixosModules.services
+        
+        # ISO image infrastructure from nixpkgs
+        "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
+        
+        # ISO image configuration
+        self.nixosModules.image-usb-live
+      ];
+    };
+
+    # Debug USB Live Image (Regular + debug overlay)
+    usb-live-debug = inputs.nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        # Apply cockpit overlay
+        { nixpkgs.overlays = [ self.overlays.cockpitZfs ]; }
+        
+        # Core system modules (same as regular)
+        self.nixosModules.base-system
+        self.nixosModules.hardware
+        self.nixosModules.boot-branding
+        self.nixosModules.services
+        
+        # Debug enhancements
+        self.nixosModules.debug-overlay
+        
+        # ISO image infrastructure from nixpkgs
+        "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
+        
+        # Debug ISO configuration
+        self.nixosModules.image-usb-live-debug
+      ];
+    };
+  };
+
   perSystem = { pkgs, system, lib, ... }:
-    lib.optionalAttrs (system == "x86_64-linux") (
-      let
-        # Helper to build NixOS system with image output
-        buildImage = modules: imageName:
-          let
-            nixosSystem = inputs.nixpkgs.lib.nixosSystem {
-              inherit system;
-              modules = modules;
-            };
-          in
-          nixosSystem.config.system.build.images.${imageName};
+    lib.optionalAttrs (system == "x86_64-linux") {
+      packages = {
+        # 1. USB Live Image (Hybrid BIOS/EFI ISO) - Regular
+        usb = self.nixosConfigurations.usb-live.config.system.build.isoImage;
 
-        # Regular USB Live Image (Clean, production-ready)
-        regularModules = [
-          # Apply cockpit overlay
-          { nixpkgs.overlays = [ self.overlays.cockpitZfs ]; }
-          
-          # Core system modules (clean, no debug)
-          self.nixosModules.base-system
-          self.nixosModules.hardware
-          self.nixosModules.boot-branding
-          self.nixosModules.services
-          
-          # Image infrastructure from nixpkgs
-          "${inputs.nixpkgs}/nixos/modules/image/images.nix"
-          "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
-          
-          # ISO image configuration
-          self.nixosModules.image-usb-live
+        # 2. USB Live Image (Debug variant with verbose logging)
+        usb-debug = self.nixosConfigurations.usb-live-debug.config.system.build.isoImage;
+
+        # Meta-package for CI to build everything
+        images = pkgs.linkFarm "snosu-images" [
+          { name = "usb"; path = self.nixosConfigurations.usb-live.config.system.build.isoImage; }
+          { name = "usb-debug"; path = self.nixosConfigurations.usb-live-debug.config.system.build.isoImage; }
         ];
 
-        # Debug USB Live Image (Regular + debug overlay)
-        debugModules = [
-          # Apply cockpit overlay
-          { nixpkgs.overlays = [ self.overlays.cockpitZfs ]; }
-          
-          # Core system modules (same as regular)
-          self.nixosModules.base-system
-          self.nixosModules.hardware
-          self.nixosModules.boot-branding
-          self.nixosModules.services
-          
-          # Debug enhancements
-          self.nixosModules.debug-overlay
-          
-          # Image infrastructure from nixpkgs
-          "${inputs.nixpkgs}/nixos/modules/image/images.nix"
-          "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
-          
-          # Debug ISO configuration
-          self.nixosModules.image-usb-live-debug
-        ];
+        # Compressed artifacts - individual 7z files (one per image)
+        images-7z = pkgs.runCommand "snosu-hyper-recovery-images-7z" {
+          nativeBuildInputs = [ pkgs._7zz pkgs.findutils pkgs.coreutils ];
+        } ''
+          set -euo pipefail
+          mkdir -p $out
 
-      in
-      {
-        packages = {
-          # 1. USB Live Image (Hybrid BIOS/EFI ISO) - Regular
-          usb = buildImage regularModules "usb-live";
+          images_root="${self.nixosConfigurations.usb-live.config.system.build.isoImage}"
+          images_debug_root="${self.nixosConfigurations.usb-live-debug.config.system.build.isoImage}"
 
-          # 2. USB Live Image (Debug variant with verbose logging)
-          usb-debug = buildImage debugModules "usb-live-debug";
+          # Find all image files (including ISO for hybrid USB images)
+          files=$(find -L "$images_root" "$images_debug_root" -type f \( \
+            -name "*.iso" -o -name "*.img" -o -name "*.raw" \
+          \) || true)
 
-          # Meta-package for CI to build everything
-          images = pkgs.linkFarm "snosu-images" [
-            { name = "usb"; path = self.packages.${system}.usb; }
-            { name = "usb-debug"; path = self.packages.${system}.usb-debug; }
-          ];
+          if [ -z "$files" ]; then
+            echo "No image artifacts found" >&2
+            echo "Checked directories:" >&2
+            echo "  - $images_root" >&2
+            echo "  - $images_debug_root" >&2
+            exit 1
+          fi
 
-          # Compressed artifacts - individual 7z files (one per image)
-          images-7z = pkgs.runCommand "snosu-hyper-recovery-images-7z" {
-            nativeBuildInputs = [ pkgs._7zz pkgs.findutils pkgs.coreutils ];
-          } ''
-            set -euo pipefail
-            mkdir -p $out
+          # Process each file and normalize names for CI stability
+          while IFS= read -r file; do
+            if [ -z "$file" ]; then continue; fi
 
-            images_root="${self.packages.${system}.images}"
+            base_name=$(basename "$file")
+            parent_path=$(dirname "$file")
 
-            # Find all image files (including ISO for hybrid USB images)
-            files=$(find -L "$images_root" -type f \( \
-              -name "*.iso" -o -name "*.img" -o -name "*.raw" \
-            \) || true)
-
-            if [ -z "$files" ]; then
-              echo "No image artifacts found under $images_root" >&2
-              echo "Directory contents:" >&2
-              find -L "$images_root" -maxdepth 4 -type f | head -n 50 >&2
-              exit 1
+            # Determine standardized output name based on which config it came from
+            if [[ "$parent_path" == *"usb-live-debug"* ]]; then
+              out_name="hyper-recovery-debug.iso.7z"
+            else
+              out_name="hyper-recovery-live.iso.7z"
             fi
 
-            # Process each file and normalize names for CI stability
-            while IFS= read -r file; do
-              if [ -z "$file" ]; then continue; fi
+            echo "Compressing $base_name -> $out_name..."
+            7zz a -t7z -mx=9 -mmt -ms=on "$out/$out_name" "$file"
+          done <<< "$files"
 
-              base_name=$(basename "$file")
-              parent_dir=$(basename "$(dirname "$file")")
-
-              # Determine standardized output name based on parent directory and file type
-              if [[ "$parent_dir" == *"debug"* ]]; then
-                out_name="hyper-recovery-debug.iso.7z"
-              elif [[ "$base_name" == *".iso" ]]; then
-                out_name="hyper-recovery-live.iso.7z"
-              else
-                out_name="''${base_name}.7z"
-              fi
-
-              echo "Compressing $parent_dir/$base_name -> $out_name..."
-              7zz a -t7z -mx=9 -mmt -ms=on "$out/$out_name" "$file"
-            done <<< "$files"
-
-            echo "Compression complete. Normalized Artifacts:"
-            ls -lh $out/
-          '';
-        };
-      }
-    );
+          echo "Compression complete. Normalized Artifacts:"
+          ls -lh $out/
+        '';
+      };
+    };
 }
