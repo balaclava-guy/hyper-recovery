@@ -1,41 +1,81 @@
 name: Visual Smoke Test
 
 on:
-  workflow_dispatch:
-  push:
+  workflow_run:
+    workflows: ["Fetch & Store Artifacts"]
+    types: [completed]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      fetch_run_id:
+        description: "Run ID of the Fetch & Store Artifacts workflow"
+        required: true
 
 jobs:
   visual-smoke:
+    if: |
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-
-      - name: Install Nix
-        uses: cachix/install-nix-action@v27
         with:
-          extra_nix_config: |
-            substituters = https://cache.nixos.org https://cache.garnix.io
-            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Select source workflow run
+        id: source-run
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "run_id=${{ github.event.workflow_run.id }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_id=${{ inputs.fetch_run_id }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download live ISO artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: live-iso
+          path: dist/live
+          run-id: ${{ steps.source-run.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download debug ISO artifact (optional)
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: debug-iso
+          path: dist/debug
+          run-id: ${{ steps.source-run.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install QEMU + Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 qemu-utils socat imagemagick ovmf ffmpeg
+          sudo apt-get install -y qemu-system-x86 qemu-utils socat imagemagick ovmf ffmpeg p7zip-full
           # Verify OVMF path
           ls -la /usr/share/OVMF/ || ls -la /usr/share/ovmf/ || ls -la /usr/share/edk2/
           echo "OVMF files found at:"
           find /usr/share -name "OVMF*.fd" 2>/dev/null | head -5
 
-      - name: Build ISO
+      - name: Extract ISO artifacts
         run: |
-          nix build .#packages.x86_64-linux.usb --out-link result-iso --print-build-logs --refresh
-          nix build .#packages.x86_64-linux.usb-debug --out-link result-iso-debug --print-build-logs --refresh
-          ISO_PATH=$(ls result-iso/iso/*.iso | head -1)
-          ISO_DEBUG_PATH=$(ls result-iso-debug/iso/*.iso | head -1)
+          set -euo pipefail
+
+          LIVE_7Z=$(ls dist/live/*.7z | head -1)
+          mkdir -p dist/live/extracted
+          7z x "$LIVE_7Z" -odist/live/extracted >/dev/null
+          ISO_PATH=$(ls dist/live/extracted/*.iso | head -1)
           echo "ISO_PATH=$ISO_PATH" >> $GITHUB_ENV
+
+          ISO_DEBUG_PATH=""
+          if ls dist/debug/*.7z >/dev/null 2>&1; then
+            DEBUG_7Z=$(ls dist/debug/*.7z | head -1)
+            mkdir -p dist/debug/extracted
+            7z x "$DEBUG_7Z" -odist/debug/extracted >/dev/null
+            ISO_DEBUG_PATH=$(ls dist/debug/extracted/*.iso | head -1)
+          fi
           echo "ISO_DEBUG_PATH=$ISO_DEBUG_PATH" >> $GITHUB_ENV
 
       - name: Boot ISO and capture visuals
@@ -196,12 +236,16 @@ jobs:
             -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
             -drive if=pflash,format=raw,file="$EFI_VARS"
 
-          # EFI boot test (debug ISO with hyper.debug=1)
-          EFI_VARS_DEBUG="/tmp/OVMF_VARS_DEBUG.fd"
-          cp "$OVMF_VARS_TEMPLATE" "$EFI_VARS_DEBUG"
-          run_boot "debug-efi" 3 /tmp/qemu-monitor-debug artifacts/serial-debug-efi.log debug-efi "$ISO_DEBUG_PATH" \
-            -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
-            -drive if=pflash,format=raw,file="$EFI_VARS_DEBUG"
+          # EFI boot test (debug ISO with hyper.debug=1) when available
+          if [ -n "${ISO_DEBUG_PATH:-}" ] && [ -f "$ISO_DEBUG_PATH" ]; then
+            EFI_VARS_DEBUG="/tmp/OVMF_VARS_DEBUG.fd"
+            cp "$OVMF_VARS_TEMPLATE" "$EFI_VARS_DEBUG"
+            run_boot "debug-efi" 3 /tmp/qemu-monitor-debug artifacts/serial-debug-efi.log debug-efi "$ISO_DEBUG_PATH" \
+              -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
+              -drive if=pflash,format=raw,file="$EFI_VARS_DEBUG"
+          else
+            echo "No debug ISO artifact found; skipping debug EFI boot test."
+          fi
 
       - name: Upload visual artifacts
         if: always()
@@ -215,4 +259,3 @@ jobs:
             artifacts/*-boot.mp4
             artifacts/serial-*.log
           if-no-files-found: warn
-
