@@ -46,7 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 qemu-utils ovmf novnc websockify curl lsof
+          sudo apt-get install -y qemu-system-x86 qemu-utils ovmf novnc websockify curl lsof zstd
 
           CLOUDFLARED_DEB="cloudflared-linux-amd64.deb"
           curl -fsSL -o "$CLOUDFLARED_DEB" https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
@@ -76,7 +76,27 @@ jobs:
             nix build --accept-flake-config .#$PKG --out-link result-iso --print-build-logs --refresh
           fi
           
-          ISO_PATH=$(ls result-iso/*.iso | head -1)
+          # Our ISO derivation outputs to $out/iso/<name>.iso (or <name>.iso.zst if compressImage is enabled).
+          ISO_PATH=""
+          ISO_ZST_PATH=""
+          if [ -e result-iso ]; then
+            ISO_PATH="$(find -L result-iso -maxdepth 4 -type f -name '*.iso' | head -1 || true)"
+            ISO_ZST_PATH="$(find -L result-iso -maxdepth 4 -type f -name '*.iso.zst' | head -1 || true)"
+          fi
+
+          if [ -z "$ISO_PATH" ] && [ -n "$ISO_ZST_PATH" ]; then
+            echo "::notice::Found compressed ISO ($ISO_ZST_PATH); decompressing for QEMU..."
+            ISO_PATH="/tmp/preview.iso"
+            zstd -d -f -o "$ISO_PATH" "$ISO_ZST_PATH"
+          fi
+
+          if [ -z "$ISO_PATH" ]; then
+            echo "::error::Could not locate ISO under result-iso (expected result-iso/iso/*.iso)" >&2
+            echo "Contents of result-iso:" >&2
+            find -L result-iso -maxdepth 4 -print >&2 || true
+            exit 1
+          fi
+
           echo "ISO_PATH=$ISO_PATH" >> $GITHUB_ENV
 
       - name: Start preview VM with VNC + noVNC + tunnel
