@@ -14,6 +14,7 @@ This repository contains a Nix Flake to generate a portable hypervisor USB syste
 - **ZFS Support**: Includes ZFS kernel modules and tools
 - **Rescue/Recovery**: Tools to import existing ZFS pools (Proxmox) and fix issues
 - **Themed Boot**: Custom GRUB2 and Plymouth themes
+- **Slim Firmware Core**: Ships a pruned firmware bundle by default, with an on-demand escape hatch
 
 ## What is Hyper Recovery?
 
@@ -49,14 +50,6 @@ nix build .#usb-debug
 ```
 
 Debug variant with verbose logging and Plymouth debugging enabled.
-
-### VM Image (QCOW2)
-
-```bash
-nix build .#vm
-```
-
-For testing in QEMU/KVM.
 
 ### All Images + Compressed Artifacts
 
@@ -96,7 +89,7 @@ sudo sync
 ## Boot Modes
 
 The ISO image is a **hybrid boot image** designed for USB:
-- **BIOS/Legacy mode**: Uses syslinux/isolinux bootloader with hybrid MBR
+- **BIOS/Legacy mode**: Uses GRUB with a hybrid MBR for USB drives
 - **UEFI mode**: Uses GRUB installed to ESP at `/EFI/BOOT/bootx64.efi`
 - **Ventoy**: Chainloads from either boot mode automatically
 - **Works when dd'd to USB** or booted from Ventoy
@@ -108,10 +101,20 @@ The ISO image is a **hybrid boot image** designed for USB:
     -   User: `snosu`
     -   Password: `nixos`
 3.  **Cockpit**: Access `https://<IP_ADDRESS>:9090`
-4.  **ZFS Import**:
+4.  **Firmware Compatibility (if hardware is missing)**:
+    -   Default ISO includes a pruned firmware set to keep downloads small.
+    -   If WiFi/GPU/NIC firmware is missing on your system, temporarily enable full firmware:
+        ```bash
+        sudo hyper-hw firmware full
+        ```
+    -   To revert to the core firmware path:
+        ```bash
+        sudo hyper-hw firmware core
+        ```
+5.  **ZFS Import**:
     -   Run `import-proxmox-pools` to scan
     -   Use `zpool import -f <poolname>` to force import if uncleanly unmounted
-5.  **Booting Local Drives**:
+6.  **Booting Local Drives**:
     -   Use GRUB's OS detection (enabled by default)
     -   Boot local drives as VMs through Cockpit/libvirt
     -   Use the machine's BIOS/UEFI boot menu to chainload

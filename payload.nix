@@ -1,6 +1,9 @@
 { config, pkgs, lib, ... }:
 
 let
+  firmware = import ./hyper-firmware.nix { inherit pkgs lib; };
+  hyperFirmwareCore = firmware.hyperFirmwareCore;
+
   # Debug capture script - run 'hyper-debug' to collect diagnostics
   hyperDebugScript = pkgs.writeShellScriptBin "hyper-debug" ''
     #!/usr/bin/env bash
@@ -101,6 +104,123 @@ let
     done
 
     echo "=== hyper-debug-serial end ==="
+  '';
+
+  # Hardware helper: toggle firmware breadth at runtime.
+  #
+  # This is intentionally imperative: we keep the ISO slim by default, but allow
+  # users to temporarily expand firmware coverage when they have connectivity.
+  hyperHwScript = pkgs.writeShellScriptBin "hyper-hw" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    usage() {
+      cat <<'EOF'
+Usage:
+  hyper-hw firmware core
+  hyper-hw firmware full
+
+Notes:
+  - "full" downloads and activates full linux-firmware at runtime (requires network).
+  - This is non-persistent across reboot.
+EOF
+    }
+
+    if [[ $# -lt 2 ]]; then
+      usage
+      exit 2
+    fi
+
+    subcmd="$1"
+    action="$2"
+
+    if [[ "$subcmd" != "firmware" ]]; then
+      usage
+      exit 2
+    fi
+
+    sysfs_path="/sys/module/firmware_class/parameters/path"
+    if [[ ! -e "$sysfs_path" ]]; then
+      echo "hyper-hw: firmware_class.path is not available at $sysfs_path" >&2
+      echo "hyper-hw: (is firmware_class built as a module / parameter supported by this kernel?)" >&2
+      exit 1
+    fi
+
+    state_dir="/run/hyper-hw"
+    mkdir -p "$state_dir"
+
+    base_path_file="$state_dir/base-firmware-path"
+    if [[ ! -s "$base_path_file" ]]; then
+      # Store the current firmware path so we can revert later.
+      cat "$sysfs_path" > "$base_path_file" || true
+    fi
+    base_path="$(cat "$base_path_file" 2>/dev/null || true)"
+    if [[ -z "$base_path" ]]; then
+      # Fallback to the conventional path in NixOS activation scripts.
+      base_path="/run/current-system/firmware/lib/firmware"
+    fi
+
+    case "$action" in
+      core)
+        if [[ -e "$state_dir/firmware-overlay" ]]; then
+          rm -rf "$state_dir/firmware-overlay"
+        fi
+        echo -n "$base_path" > "$sysfs_path"
+        echo "hyper-hw: firmware path set to core: $base_path"
+        ;;
+
+      full)
+        if ! command -v nix >/dev/null 2>&1; then
+          echo "hyper-hw: nix is not in PATH" >&2
+          exit 1
+        fi
+
+        # Use nixpkgs from NIX_PATH to keep this usable without pinning a flake at runtime.
+        # Users can override by setting NIX_PATH or configuring substituters.
+        echo "hyper-hw: downloading full linux-firmware via nix..."
+        fw_out="$(nix build --no-link --print-out-paths 'nixpkgs#linux-firmware' | tail -n 1)"
+        if [[ -z "$fw_out" ]] || [[ ! -d "$fw_out/lib/firmware" ]]; then
+          echo "hyper-hw: linux-firmware build did not produce lib/firmware: $fw_out" >&2
+          exit 1
+        fi
+
+        overlay="$state_dir/firmware-overlay"
+        union="$overlay/union"
+        rm -rf "$overlay"
+        mkdir -p "$union"
+
+        # Build a synthetic firmware tree so we can repoint firmware_class.path.
+        # Order matters: base first, then full firmware overlays it.
+        if [[ -d "$base_path" ]]; then
+          (cd "$base_path" && find . -type f -print0) | while IFS= read -r -d $'\\0' f; do
+            src="$base_path/$f"
+            dst="$union/$f"
+            mkdir -p "$(dirname "$dst")"
+            ln -sf "$src" "$dst"
+          done
+        fi
+
+        (cd "$fw_out/lib/firmware" && find . -type f -print0) | while IFS= read -r -d $'\\0' f; do
+          src="$fw_out/lib/firmware/$f"
+          dst="$union/$f"
+          mkdir -p "$(dirname "$dst")"
+          ln -sf "$src" "$dst"
+        done
+
+        echo -n "$union" > "$sysfs_path"
+        echo "hyper-hw: firmware path set to full: $union"
+
+        if command -v udevadm >/dev/null 2>&1; then
+          echo "hyper-hw: triggering udev..."
+          udevadm trigger || true
+        fi
+        ;;
+
+      *)
+        usage
+        exit 2
+        ;;
+    esac
   '';
 
   # 1. Snosu Plymouth Theme Package
@@ -227,8 +347,12 @@ in
   nixpkgs.config.allowUnfree = true;
 
   # Firmware & wireless
-  hardware.enableAllFirmware = true;
-  hardware.firmware = with pkgs; [ linux-firmware ];
+  hardware.enableAllFirmware = false;
+  hardware.enableRedistributableFirmware = false;
+  hardware.firmware = [
+    hyperFirmwareCore
+    pkgs.wireless-regdb
+  ];
   hardware.wirelessRegulatoryDatabase = true;
 
   # Networking
@@ -384,12 +508,13 @@ in
 
   # Standard Packages
   environment.systemPackages = with pkgs; [
-    qemu-utils virt-manager zfs parted gptfdisk htop vim git perl
+    qemu-utils zfs parted gptfdisk htop vim git perl
     pciutils usbutils smartmontools nvme-cli os-prober efibootmgr
     wpa_supplicant dhcpcd udisks2
     networkmanager  # nmcli
     iw
     hyperDebugScript  # Debug capture script - run 'hyper-debug'
+    hyperHwScript     # Firmware toggle helper - run 'hyper-hw'
     plymouth          # For Plymouth debugging
   ];
 

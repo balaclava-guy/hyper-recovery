@@ -14,7 +14,7 @@ terminal-font: "Hyper Fighting Regular 16"
     file = "logo.png"
     left = 2%
     top = 18%
-    width = 46%
+    width = 32%
 }
 
 # Boot Menu (Right Side)

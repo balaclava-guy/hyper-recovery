@@ -69,9 +69,6 @@
       # 2. USB Live Image (Debug variant with verbose logging)
       usb-debug = myOS.config.system.build.images.usb-live-debug;
 
-      # 3. VM Image (QCOW2 for testing)
-      vm = myOS.config.system.build.images.qemu-efi;
-
       # POC minimal ISO for initrd log capture
       poc-iso = pocOS.config.system.build.isoImage;
 
@@ -96,7 +93,6 @@
       images = pkgs.linkFarm "snosu-images" [
         { name = "usb"; path = self.packages.${system}.usb; }
         { name = "usb-debug"; path = self.packages.${system}.usb-debug; }
-        { name = "vm"; path = self.packages.${system}.vm; }
       ];
 
       # Compressed artifacts - individual 7z files (one per image)
@@ -110,8 +106,7 @@
         
         # Find all image files (including ISO for hybrid USB images)
         files=$(find -L "$images_root" -type f \( \
-          -name "*.iso" -o -name "*.img" -o -name "*.qcow2" -o -name "*.qcow" \
-          -o -name "*.raw" -o -name "*.vmdk" -o -name "*.vhd" -o -name "*.vhdx" \
+          -name "*.iso" -o -name "*.img" -o -name "*.raw" \
         \) || true)
 
         if [ -z "$files" ]; then
@@ -129,13 +124,10 @@
           parent_dir=$(basename "$(dirname "$file")")
           
           # Determine standardized output name based on parent directory and file type
-          # The linkFarm creates usb/, usb-debug/, vm/ directories
           if [[ "$parent_dir" == *"debug"* ]]; then
             out_name="hyper-recovery-debug.iso.7z"
           elif [[ "$base_name" == *".iso" ]]; then
             out_name="hyper-recovery-live.iso.7z"
-          elif [[ "$base_name" == *".qcow2" ]]; then
-            out_name="hyper-recovery-vm.qcow2.7z"
           else
             # Fallback for anything else (shouldn't happen with current setup)
             out_name="''${base_name}.7z"
