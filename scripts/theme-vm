@@ -7,6 +7,7 @@ import hashlib
 import os
 import platform
 import shutil
+import socket
 import subprocess
 import sys
 import textwrap
@@ -192,13 +193,20 @@ def _write_cloud_init(seed_dir: Path) -> None:
                   mount -t vfat -o ro "$dev" "$mnt"
                   trap 'umount "$mnt" 2>/dev/null || true' EXIT
 
+                  hold_seconds="$(cat "$mnt/HOLD_SECONDS" 2>/dev/null || echo 8)"
+                  if ! [[ "$hold_seconds" =~ ^[0-9]+$ ]]; then hold_seconds=8; fi
+
+                  grub_timeout="$(cat "$mnt/GRUB_TIMEOUT" 2>/dev/null || echo 15)"
+                  if ! [[ "$grub_timeout" =~ ^[0-9]+$ ]]; then grub_timeout=15; fi
+
                   new_sha="$(
-                    (cd "$mnt" && \
+                    (
+                      cd "$mnt"
                       find themes/grub/hyper-recovery themes/plymouth/hyper-recovery assets/fonts/undefined-medium -type f -print0 \
-                      | LC_ALL=C sort -z \
-                      | xargs -0 sha256sum \
-                      | sha256sum \
-                      | awk '{print $1}')
+                        | LC_ALL=C sort -z \
+                        | xargs -0 sha256sum
+                      printf "hold_seconds=%s\ngrub_timeout=%s\n" "$hold_seconds" "$grub_timeout"
+                    ) | sha256sum | awk '{print $1}'
                   )"
 
                   old_sha="$(cat "$stamp" 2>/dev/null || true)"
@@ -233,22 +241,57 @@ def _write_cloud_init(seed_dir: Path) -> None:
                   sed -i 's/Hyper Fighting Regular/Undefined Medium/g' "$grub_theme_dir/theme.txt" || true
 
                   grub_defaults=/etc/default/grub
+                  # Ensure GRUB is in graphical mode so the theme can render.
+                  sed -i '/^GRUB_TERMINAL=/d' "$grub_defaults" 2>/dev/null || true
+
                   if ! grep -q '^GRUB_TIMEOUT_STYLE=' "$grub_defaults" 2>/dev/null; then
                     echo 'GRUB_TIMEOUT_STYLE=menu' >> "$grub_defaults"
                   else
                     sed -i 's/^GRUB_TIMEOUT_STYLE=.*/GRUB_TIMEOUT_STYLE=menu/' "$grub_defaults"
                   fi
                   if ! grep -q '^GRUB_TIMEOUT=' "$grub_defaults" 2>/dev/null; then
-                    echo 'GRUB_TIMEOUT=10' >> "$grub_defaults"
+                    echo "GRUB_TIMEOUT=$grub_timeout" >> "$grub_defaults"
                   else
-                    sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=10/' "$grub_defaults"
+                    sed -i "s/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=$grub_timeout/" "$grub_defaults"
                   fi
+
+                  if grep -q '^GRUB_GFXMODE=' "$grub_defaults" 2>/dev/null; then
+                    sed -i 's/^GRUB_GFXMODE=.*/GRUB_GFXMODE=auto/' "$grub_defaults"
+                  else
+                    echo 'GRUB_GFXMODE=auto' >> "$grub_defaults"
+                  fi
+                  if grep -q '^GRUB_GFXPAYLOAD_LINUX=' "$grub_defaults" 2>/dev/null; then
+                    sed -i 's/^GRUB_GFXPAYLOAD_LINUX=.*/GRUB_GFXPAYLOAD_LINUX=keep/' "$grub_defaults"
+                  else
+                    echo 'GRUB_GFXPAYLOAD_LINUX=keep' >> "$grub_defaults"
+                  fi
+                  if grep -q '^GRUB_TERMINAL_OUTPUT=' "$grub_defaults" 2>/dev/null; then
+                    sed -i 's/^GRUB_TERMINAL_OUTPUT=.*/GRUB_TERMINAL_OUTPUT=gfxterm/' "$grub_defaults"
+                  else
+                    echo 'GRUB_TERMINAL_OUTPUT=gfxterm' >> "$grub_defaults"
+                  fi
+
+                  # Make sure Plymouth is actually used.
+                  if grep -q '^GRUB_CMDLINE_LINUX_DEFAULT=' "$grub_defaults" 2>/dev/null; then
+                    sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash plymouth.ignore-serial-consoles"/' "$grub_defaults"
+                  else
+                    echo 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash plymouth.ignore-serial-consoles"' >> "$grub_defaults"
+                  fi
+
                   if grep -q '^GRUB_THEME=' "$grub_defaults" 2>/dev/null; then
                     sed -i "s|^GRUB_THEME=.*|GRUB_THEME=${grub_theme_dir}/theme.txt|" "$grub_defaults"
                   else
                     echo "GRUB_THEME=${grub_theme_dir}/theme.txt" >> "$grub_defaults"
                   fi
                   update-grub
+
+                  # Keep Plymouth visible for theme iteration: delay plymouth-quit.
+                  mkdir -p /etc/systemd/system/plymouth-quit.service.d
+                  cat > /etc/systemd/system/plymouth-quit.service.d/hyper-hold.conf <<EOF
+[Service]
+ExecStartPre=/usr/bin/sleep $hold_seconds
+EOF
+                  systemctl daemon-reload || true
 
                   ply_theme_dir=/usr/share/plymouth/themes/snosu-hyper-recovery
                   rm -rf "$ply_theme_dir"
@@ -259,7 +302,7 @@ def _write_cloud_init(seed_dir: Path) -> None:
                   if [[ -f "$ply_theme_dir/snosu-hyper-recovery.plymouth" ]]; then
                     sed -i "s|^ImageDir=.*|ImageDir=${ply_theme_dir}|" "$ply_theme_dir/snosu-hyper-recovery.plymouth" || true
                   fi
-                  plymouth-set-default-theme -R snosu-hyper-recovery || true
+                  plymouth-set-default-theme -R snosu-hyper-recovery
 
                   echo "$new_sha" > "$stamp"
                   sync || true
@@ -311,6 +354,24 @@ def main() -> int:
     p.add_argument("--fresh", action="store_true", help="Recreate overlay disk and seed ISO")
     p.add_argument("--headless", action="store_true", help="Run QEMU with -nographic")
     p.add_argument("--ssh", action="store_true", help="Print SSH command (localhost:2222)")
+    p.add_argument(
+        "--ssh-port",
+        type=int,
+        default=2222,
+        help="Host port to forward to guest SSH (default: 2222). Use 0 to disable forwarding.",
+    )
+    p.add_argument(
+        "--hold-seconds",
+        type=int,
+        default=8,
+        help="How long to keep Plymouth visible by delaying plymouth-quit (default: 8)",
+    )
+    p.add_argument(
+        "--grub-timeout",
+        type=int,
+        default=15,
+        help="GRUB menu timeout in seconds (default: 15)",
+    )
     p.add_argument("--repo", default=".", help="Path to the hyper-recovery repo (defaults to current directory)")
     p.add_argument("--cache-dir", default=os.environ.get("HYPER_THEME_VM_DIR", ""), help="Cache dir override")
     p.add_argument(
@@ -390,9 +451,33 @@ def main() -> int:
     firmware_search_dirs.append(qemu_share)
     firmware_search_dirs.append(Path("/opt/homebrew/share/qemu"))
 
-    if args.ssh:
+    def port_free(port: int) -> bool:
+        if port <= 0:
+            return False
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind(("127.0.0.1", port))
+            except OSError:
+                return False
+            return True
+
+    ssh_port = args.ssh_port
+    if ssh_port != 0 and not port_free(ssh_port):
+        # Avoid failing hard if another VM instance is still running.
+        for cand in range(ssh_port + 1, ssh_port + 50):
+            if port_free(cand):
+                ssh_port = cand
+                break
+        else:
+            sys.stderr.write("No free port found for SSH forwarding; disabling SSH forwarding.\n")
+            ssh_port = 0
+
+    if args.ssh and ssh_port != 0:
         sys.stderr.write(
-            "SSH (after first boot): ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 theme@127.0.0.1\n"
+            "SSH (after first boot): ssh -o StrictHostKeyChecking=no "
+            "-o UserKnownHostsFile=/dev/null -p "
+            f"{ssh_port} theme@127.0.0.1\n"
         )
 
     if args.fresh:
@@ -417,6 +502,8 @@ def main() -> int:
     (share_dir / "themes/plymouth").mkdir(parents=True, exist_ok=True)
     (share_dir / "assets/fonts/undefined-medium").mkdir(parents=True, exist_ok=True)
     (share_dir / "THEME_SYNC_MARKER").write_text("hyper-theme-sync\n", encoding="utf-8")
+    (share_dir / "HOLD_SECONDS").write_text(f"{args.hold_seconds}\n", encoding="utf-8")
+    (share_dir / "GRUB_TIMEOUT").write_text(f"{args.grub_timeout}\n", encoding="utf-8")
 
     shutil.copytree(repo / "themes/grub/hyper-recovery", share_dir / "themes/grub/hyper-recovery")
     shutil.copytree(repo / "themes/plymouth/hyper-recovery", share_dir / "themes/plymouth/hyper-recovery")
@@ -475,6 +562,10 @@ def main() -> int:
     if not overlay_img.exists():
         _run([qemu_img, "create", "-f", "qcow2", "-F", "qcow2", "-b", str(base_img), str(overlay_img)])
 
+    netdev = "user,id=net0"
+    if ssh_port != 0:
+        netdev = f"user,id=net0,hostfwd=tcp:127.0.0.1:{ssh_port}-:22"
+
     qemu_args = [
         qemu_system,
         "-machine",
@@ -486,9 +577,15 @@ def main() -> int:
         "-smp",
         "2",
         "-device",
+        "qemu-xhci",
+        "-device",
+        "usb-kbd",
+        "-device",
+        "usb-mouse",
+        "-device",
         "virtio-gpu-pci",
         "-netdev",
-        "user,id=net0,hostfwd=tcp:127.0.0.1:2222-:22",
+        netdev,
         "-device",
         "virtio-net-pci,netdev=net0",
         "-drive",
