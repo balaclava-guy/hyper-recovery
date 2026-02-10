@@ -463,6 +463,10 @@ def _write_nixos_module(dest: Path) -> None:
                 ${pkgs.coreutils}/bin/cp -R "$mnt/themes" /etc/nixos/hyper-theme-src/
                 ${pkgs.coreutils}/bin/cp -R "$mnt/assets" /etc/nixos/hyper-theme-src/
 
+                # Keep the NixOS module itself up-to-date from the host repo.
+                ${pkgs.coreutils}/bin/mkdir -p /etc/nixos
+                ${pkgs.coreutils}/bin/cp "$mnt/nixos/hyper-theme.nix" /etc/nixos/hyper-theme.nix
+
                 # Feed settings into the module via a simple import file.
                 ${pkgs.coreutils}/bin/printf '{ holdSeconds = %s; grubTimeout = %s; }\\n' \
                   "$hold_seconds" "$grub_timeout" > /etc/nixos/hyper-theme-settings.nix
@@ -512,11 +516,10 @@ def _write_nixos_module(dest: Path) -> None:
               boot.plymouth.theme = lib.mkIf haveThemeSrc "snosu-hyper-recovery";
               boot.plymouth.themePackages = lib.mkIf haveThemeSrc [ plymouthTheme ];
 
-              # Keep Plymouth visible for theme iteration.
-              environment.etc."systemd/system/plymouth-quit.service.d/hyper-hold.conf".text = ''
-                [Service]
-                ExecStartPre=${pkgs.coreutils}/bin/sleep ${toString holdSeconds}
-              '';
+              # Keep Plymouth visible for theme iteration by delaying plymouth-quit.
+              # Avoid `environment.etc` drop-ins here; they can conflict with other etc entries.
+              systemd.services.plymouth-quit.serviceConfig.ExecStartPre =
+                [ "${pkgs.coreutils}/bin/sleep ${toString holdSeconds}" ];
 
               # Run on each boot; if the theme tree changed, rebuild boot assets and reboot.
               systemd.services.hyper-theme-sync = {
