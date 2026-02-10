@@ -355,9 +355,12 @@ def _write_nixos_module(dest: Path) -> None:
               holdSeconds = settings.holdSeconds or 8;
               grubTimeout = settings.grubTimeout or 15;
 
-              themeSrc = /etc/hyper-theme-src;
+              # Must exist at nixos-rebuild evaluation time. hyper-theme-sync keeps this in /etc/nixos.
+              themeSrcPath = /etc/nixos/hyper-theme-src;
+              haveThemeSrc = builtins.pathExists themeSrcPath;
+              themeSrc = if haveThemeSrc then themeSrcPath else null;
 
-              grubTheme = pkgs.stdenvNoCC.mkDerivation {
+              grubTheme = if haveThemeSrc then (pkgs.stdenvNoCC.mkDerivation {
                 pname = "snosu-hyper-recovery-grub-theme";
                 version = "0";
                 src = themeSrc;
@@ -377,9 +380,9 @@ def _write_nixos_module(dest: Path) -> None:
                   sed -i 's/Hyper Street Fighter 2 Regular/Undefined Medium/g' "$out/theme.txt" || true
                   sed -i 's/Hyper Fighting Regular/Undefined Medium/g' "$out/theme.txt" || true
                 '';
-              };
+              }) else null;
 
-              plymouthTheme = pkgs.stdenvNoCC.mkDerivation {
+              plymouthTheme = if haveThemeSrc then (pkgs.stdenvNoCC.mkDerivation {
                 pname = "snosu-hyper-recovery-plymouth-theme";
                 version = "0";
                 src = themeSrc;
@@ -395,7 +398,7 @@ def _write_nixos_module(dest: Path) -> None:
                     sed -i "s|^ImageDir=.*|ImageDir=$dest|" "$dest/snosu-hyper-recovery.plymouth" || true
                   fi
                 '';
-              };
+              }) else null;
 
               hyperThemeSync = pkgs.writeShellScript "hyper-theme-sync" ''
                 set -euo pipefail
@@ -455,10 +458,10 @@ def _write_nixos_module(dest: Path) -> None:
                 fi
 
                 echo "hyper-theme-sync: syncing theme sources..." >&2
-                ${pkgs.coreutils}/bin/rm -rf /etc/hyper-theme-src
-                ${pkgs.coreutils}/bin/mkdir -p /etc/hyper-theme-src
-                ${pkgs.coreutils}/bin/cp -R "$mnt/themes" /etc/hyper-theme-src/
-                ${pkgs.coreutils}/bin/cp -R "$mnt/assets" /etc/hyper-theme-src/
+                ${pkgs.coreutils}/bin/rm -rf /etc/nixos/hyper-theme-src
+                ${pkgs.coreutils}/bin/mkdir -p /etc/nixos/hyper-theme-src
+                ${pkgs.coreutils}/bin/cp -R "$mnt/themes" /etc/nixos/hyper-theme-src/
+                ${pkgs.coreutils}/bin/cp -R "$mnt/assets" /etc/nixos/hyper-theme-src/
 
                 # Feed settings into the module via a simple import file.
                 ${pkgs.coreutils}/bin/printf '{ holdSeconds = %s; grubTimeout = %s; }\\n' \
@@ -487,7 +490,7 @@ def _write_nixos_module(dest: Path) -> None:
                 efiSupport = true;
                 device = "nodev";
                 efiInstallAsRemovable = true;
-                theme = grubTheme;
+                theme = lib.mkIf haveThemeSrc grubTheme;
 
                 # We'll override GRUB's real timeout via extraConfig; keep a non-negative value here.
                 timeout = 1;
@@ -506,8 +509,8 @@ def _write_nixos_module(dest: Path) -> None:
               boot.kernelParams = [ "quiet" "splash" "plymouth.ignore-serial-consoles" ];
 
               boot.plymouth.enable = true;
-              boot.plymouth.theme = "snosu-hyper-recovery";
-              boot.plymouth.themePackages = [ plymouthTheme ];
+              boot.plymouth.theme = lib.mkIf haveThemeSrc "snosu-hyper-recovery";
+              boot.plymouth.themePackages = lib.mkIf haveThemeSrc [ plymouthTheme ];
 
               # Keep Plymouth visible for theme iteration.
               environment.etc."systemd/system/plymouth-quit.service.d/hyper-hold.conf".text = ''
@@ -656,10 +659,10 @@ def _write_nixos_install_script(dest: Path) -> None:
             }
             EOF
 
-            rm -rf /mnt/etc/hyper-theme-src
-            mkdir -p /mnt/etc/hyper-theme-src
-            cp -R "$theme_mnt/themes" /mnt/etc/hyper-theme-src/
-            cp -R "$theme_mnt/assets" /mnt/etc/hyper-theme-src/
+            rm -rf /mnt/etc/nixos/hyper-theme-src
+            mkdir -p /mnt/etc/nixos/hyper-theme-src
+            cp -R "$theme_mnt/themes" /mnt/etc/nixos/hyper-theme-src/
+            cp -R "$theme_mnt/assets" /mnt/etc/nixos/hyper-theme-src/
 
             nixos-install --no-root-passwd
 
