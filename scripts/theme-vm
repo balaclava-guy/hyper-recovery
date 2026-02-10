@@ -339,7 +339,7 @@ def _write_nixos_module(dest: Path) -> None:
     dest.write_text(
         textwrap.dedent(
             """\
-            # Minimal NixOS module to apply the GRUB + Plymouth themes from /etc/hyper-theme-src.
+            # Minimal NixOS module to apply the GRUB + Plymouth themes from /etc/nixos/hyper-theme-src.
             #
             # /etc/nixos/hyper-theme-settings.nix is managed by hyper-theme-sync and should contain:
             #   { holdSeconds = 8; grubTimeout = 15; }
@@ -1040,8 +1040,9 @@ def main() -> int:
         if install_mode:
             qemu_args.extend(
                 [
+                    # Boot the installer ISO only once; after install, the reboot should go to disk.
                     "-boot",
-                    "order=d",
+                    "once=d",
                     "-drive",
                     f"if=virtio,format=raw,media=cdrom,file={nixos_iso}",
                 ]
