@@ -245,6 +245,8 @@ in
   services.cockpit = {
     enable = true;
     openFirewall = true;
+    # Allow access from dynamic LAN IP/hostnames used by recovery images.
+    allowed-origins = [ "*" ];
     plugins = with pkgs; [
       cockpit-machines
       cockpit-zfs
@@ -255,9 +257,6 @@ in
         AllowUnencrypted = true;
         AllowRoot = true;
         LoginTitle = "SNOSU Hyper Recovery";
-        # Recovery image is accessed by dynamic LAN IP/hostnames.
-        # Keep Origin checks permissive to prevent websocket handshake rejection.
-        Origins = "*";
       };
     };
   };
@@ -266,12 +265,14 @@ in
   # Cockpit 353+ reads branding from flat files in /etc/cockpit/branding/.
   environment.etc."cockpit/branding/branding.css".source = ./branding/snosu/branding.css;
   environment.etc."cockpit/branding/logo.png".source = ./branding/snosu/logo.png;
+  environment.etc."cockpit/branding/brand-large.png".source = ./branding/snosu/logo.png;
   environment.etc."cockpit/branding/apple-touch-icon.png".source = ./branding/snosu/logo.png;
   environment.etc."cockpit/branding/favicon.ico".source = ./branding/snosu/logo.png;
   # Keep legacy layout for compatibility with older Cockpit behavior.
   environment.etc."cockpit/branding/snosu/branding.ini".source = ./branding/snosu/branding.ini;
   environment.etc."cockpit/branding/snosu/branding.css".source = ./branding/snosu/branding.css;
   environment.etc."cockpit/branding/snosu/logo.png".source = ./branding/snosu/logo.png;
+  environment.etc."cockpit/branding/snosu/brand-large.png".source = ./branding/snosu/logo.png;
   environment.etc."cockpit/branding/snosu/apple-touch-icon.png".source = ./branding/snosu/logo.png;
   environment.etc."cockpit/branding/snosu/favicon.ico".source = ./branding/snosu/logo.png;
 

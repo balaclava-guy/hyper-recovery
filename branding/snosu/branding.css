@@ -1,31 +1,144 @@
 :root {
-  --snosu-dark: #020409;
-  --snosu-glow: #f15a18;
+  --snosu-ink: #070c19;
+  --snosu-ink-2: #111d34;
+  --snosu-paper: #f4f7fc;
+  --snosu-panel: #ffffff;
+  --snosu-border: #d8e1f0;
+  --snosu-text: #15223b;
+  --snosu-text-muted: #4c5d7b;
+  --snosu-blue: #0ea1fb;
+  --snosu-cyan: #48d7fb;
+  --snosu-coral: #e94a57;
+  --snosu-gold: #efbe1d;
+  --snosu-violet: #150562;
+  --snosu-shell-gradient: linear-gradient(100deg, #070c19 0%, #111d34 55%, #150562 100%);
+}
+
+:root,
+:root.pf-v5-theme-light,
+:root.pf-v6-theme-light {
+  --pf-global--primary-color--100: var(--snosu-blue);
+  --pf-global--active-color--100: var(--snosu-blue);
+  --pf-global--link--Color: #0b6bd3;
+  --pf-global--BackgroundColor--100: var(--snosu-paper);
+  --pf-global--BackgroundColor--150: #eef3fb;
+  --pf-global--BackgroundColor--200: var(--snosu-panel);
+  --pf-global--Color--100: var(--snosu-text);
+  --pf-global--Color--200: var(--snosu-text-muted);
+  --pf-global--BorderColor--100: var(--snosu-border);
+
+  --pf-v5-global--primary-color--100: var(--snosu-blue);
+  --pf-v5-global--link--Color: #0b6bd3;
+  --pf-v5-global--BackgroundColor--100: var(--snosu-paper);
+  --pf-v5-global--BackgroundColor--150: #eef3fb;
+  --pf-v5-global--BackgroundColor--200: var(--snosu-panel);
+  --pf-v5-global--Color--100: var(--snosu-text);
+  --pf-v5-global--Color--200: var(--snosu-text-muted);
+  --pf-v5-global--BorderColor--100: var(--snosu-border);
+}
+
+:root.pf-v5-theme-dark,
+:root.pf-v6-theme-dark {
+  --pf-global--primary-color--100: var(--snosu-cyan);
+  --pf-global--active-color--100: var(--snosu-cyan);
+  --pf-global--link--Color: #69cbff;
+  --pf-global--BackgroundColor--100: #0b1220;
+  --pf-global--BackgroundColor--150: #101a2e;
+  --pf-global--BackgroundColor--200: #13203a;
+  --pf-global--Color--100: #e7eefb;
+  --pf-global--Color--200: #c4d3ef;
+  --pf-global--BorderColor--100: #283756;
+
+  --pf-v5-global--primary-color--100: var(--snosu-cyan);
+  --pf-v5-global--link--Color: #69cbff;
+  --pf-v5-global--BackgroundColor--100: #0b1220;
+  --pf-v5-global--BackgroundColor--150: #101a2e;
+  --pf-v5-global--BackgroundColor--200: #13203a;
+  --pf-v5-global--Color--100: #e7eefb;
+  --pf-v5-global--Color--200: #c4d3ef;
+  --pf-v5-global--BorderColor--100: #283756;
 }
 
 body {
-  background: radial-gradient(circle at 20% -10%, rgba(255, 90, 0, 0.3), transparent 40%),
-    radial-gradient(circle at 80% 20%, rgba(255, 104, 35, 0.25), transparent 35%),
-    var(--snosu-dark);
-  color: #f8f8f8;
+  background: var(--pf-v5-global--BackgroundColor--100, var(--pf-global--BackgroundColor--100));
+  color: var(--pf-v5-global--Color--100, var(--pf-global--Color--100));
 }
 
-#badge {
-  inline-size: 210px;
-  block-size: 80px;
+.pf-v5-c-page__header,
+.pf-c-page__header {
+  background: var(--snosu-shell-gradient);
+  border-block-end: 1px solid rgba(72, 215, 251, 0.35);
+}
+
+.pf-v5-c-page__sidebar,
+.pf-c-page__sidebar {
+  background: linear-gradient(180deg, #070c19 0%, #0c1428 100%);
+  border-inline-end: 1px solid rgba(72, 215, 251, 0.2);
+}
+
+.pf-v5-c-nav__link,
+.pf-c-nav__link {
+  color: #dce6fb;
+}
+
+.pf-v5-c-nav__link:hover,
+.pf-v5-c-nav__link:focus,
+.pf-c-nav__link:hover,
+.pf-c-nav__link:focus {
+  color: #ffffff;
+  background: rgba(14, 161, 251, 0.16);
+}
+
+.pf-v5-c-nav__link.pf-m-current,
+.pf-c-nav__link.pf-m-current {
+  color: #0a1122;
+  background: linear-gradient(90deg, var(--snosu-cyan) 0%, var(--snosu-blue) 100%);
+}
+
+.pf-v5-c-page__header-brand-link,
+.pf-c-page__header-brand-link {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.pf-v5-c-page__header-brand-link::before,
+.pf-c-page__header-brand-link::before {
+  content: "";
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
   background-image: url("logo.png");
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
 }
 
+#badge {
+  display: block;
+  inline-size: 220px;
+  block-size: 78px;
+  margin: 0.35rem 0.75rem 0.5rem;
+  background-image: url("brand-large.png");
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: left center;
+}
+
+#brand {
+  min-block-size: 78px;
+  display: flex;
+  align-items: center;
+}
+
 #brand::before {
   content: "SNOSU Hyper Recovery";
-  font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
   letter-spacing: 0.08em;
-  color: var(--snosu-glow);
+  text-transform: uppercase;
+  font-weight: 600;
+  font-size: 0.76rem;
+  color: #f5f9ff;
 }
 
 .home .section {
-  --cockpit-panel-background: rgba(255, 255, 255, 0.04);
+  --cockpit-panel-background: var(--pf-v5-global--BackgroundColor--200, var(--pf-global--BackgroundColor--200));
 }
