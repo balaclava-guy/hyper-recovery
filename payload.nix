@@ -392,14 +392,14 @@ in
 
   # Cockpit Branding
   # Cockpit 353+ reads branding from flat files in /etc/cockpit/branding/.
-  environment.etc."cockpit/branding/branding.css".source = ./branding/snosu/branding.css;
+  environment.etc."cockpit/branding/branding.css".source = ./assets/branding/branding.css;
   environment.etc."cockpit/branding/logo.png".source = ./assets/branding/logo-source.png;
   environment.etc."cockpit/branding/brand-large.png".source = ./assets/branding/logo-source.png;
   environment.etc."cockpit/branding/apple-touch-icon.png".source = ./assets/branding/logo-source.png;
   environment.etc."cockpit/branding/favicon.ico".source = ./assets/branding/logo-source.png;
   # Keep legacy layout for compatibility with older Cockpit behavior.
-  environment.etc."cockpit/branding/snosu/branding.ini".source = ./branding/snosu/branding.ini;
-  environment.etc."cockpit/branding/snosu/branding.css".source = ./branding/snosu/branding.css;
+  environment.etc."cockpit/branding/snosu/branding.ini".source = ./assets/branding/branding.ini;
+  environment.etc."cockpit/branding/snosu/branding.css".source = ./assets/branding/branding.css;
   environment.etc."cockpit/branding/snosu/logo.png".source = ./assets/branding/logo-source.png;
   environment.etc."cockpit/branding/snosu/brand-large.png".source = ./assets/branding/logo-source.png;
   environment.etc."cockpit/branding/snosu/apple-touch-icon.png".source = ./assets/branding/logo-source.png;
