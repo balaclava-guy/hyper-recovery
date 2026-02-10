@@ -204,6 +204,10 @@ in
     # Graphics
     "i915" "amdgpu" "nouveau" "radeon" "virtio_gpu"
     
+    # Device-mapper (LVM / LVM-thin; needed for Proxmox "pve" VG thin-pools)
+    "dm_mod"
+    "dm_thin_pool"
+
     # Storage / Virtualization (Essential for Recovery Environment)
     "virtio_blk" "virtio_pci" "virtio_scsi"  # QEMU/KVM
     "nvme"        # NVMe drives

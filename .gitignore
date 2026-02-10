@@ -53,3 +53,6 @@ playwright-report/
 next-env.d.ts
 
 certificates
+
+# CI/preview artifacts
+/preview-logs-*/

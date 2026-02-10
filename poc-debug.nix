@@ -50,6 +50,10 @@
     "squashfs"
     "overlay"
     "loop"
+
+    # Device-mapper (LVM / LVM-thin; needed for Proxmox "pve" VG thin-pools)
+    "dm_mod"
+    "dm_thin_pool"
   ];
 
   boot.initrd.kernelModules = [
@@ -62,6 +66,10 @@
     "squashfs"
     "overlay"
     "loop"
+
+    # Device-mapper (LVM / LVM-thin; needed for Proxmox "pve" VG thin-pools)
+    "dm_mod"
+    "dm_thin_pool"
   ];
 
   boot.initrd.systemd = {
