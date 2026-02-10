@@ -57,7 +57,7 @@ def _download(url: str, dest: Path) -> None:
     tmp.replace(dest)
 
 
-def _find_firmware(search_roots: list[Path]) -> tuple[Path, Path] | None:
+def _find_firmware(search_roots: list[Path]) -> tuple[Path, Path | None] | None:
     # Common AArch64 UEFI firmware naming patterns.
     code_patterns = [
         "edk2-aarch64-code.fd",
@@ -99,7 +99,7 @@ def _find_firmware(search_roots: list[Path]) -> tuple[Path, Path] | None:
 
     code = walk_find(code_patterns, loose_code)
     vars_ = walk_find(vars_patterns, loose_vars)
-    if code and vars_:
+    if code:
         return (code, vars_)
     return None
 
@@ -114,7 +114,7 @@ def _make_cloud_init_seed_iso(xorriso: str, seed_dir: Path, out_iso: Path) -> No
             "-as",
             "mkisofs",
             "-V",
-            "cidata",
+            "CIDATA",
             "-o",
             str(out_iso),
             "-J",
@@ -338,7 +338,9 @@ def main() -> int:
         sys.stderr.write("Expected to find: themes/grub/hyper-recovery/theme.txt\n")
         return 2
 
-    cache_dir = Path(args.cache_dir) if args.cache_dir else Path.home() / ".cache" / "hyper-theme-vm"
+    # Default to /tmp because this is safe in sandboxed environments (Codex) and
+    # avoids permissions surprises under ~/Library or ~/.cache on macOS.
+    cache_dir = Path(args.cache_dir) if args.cache_dir else Path("/tmp/hyper-theme-vm")
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     os.environ.setdefault("XDG_CACHE_HOME", str(cache_dir / "xdg-cache"))
@@ -428,23 +430,47 @@ def main() -> int:
 
     efi_code_env = os.environ.get("HYPER_THEME_EFI_CODE", "")
     efi_vars_env = os.environ.get("HYPER_THEME_EFI_VARS", "")
-    if efi_code_env and efi_vars_env:
+    efi_code: Path
+    efi_vars_src: Path | None
+    if efi_code_env:
         efi_code = Path(efi_code_env)
-        efi_vars_src = Path(efi_vars_env)
-        if not efi_code.is_file() or not efi_vars_src.is_file():
-            sys.stderr.write("HYPER_THEME_EFI_CODE/HYPER_THEME_EFI_VARS were set but files do not exist.\n")
+        if not efi_code.is_file():
+            sys.stderr.write("HYPER_THEME_EFI_CODE was set but file does not exist.\n")
+            return 1
+        efi_vars_src = Path(efi_vars_env) if efi_vars_env else None
+        if efi_vars_src and not efi_vars_src.is_file():
+            sys.stderr.write("HYPER_THEME_EFI_VARS was set but file does not exist.\n")
             return 1
     else:
         fw = _find_firmware(firmware_search_dirs)
         if not fw:
             sys.stderr.write(
-                "Failed to locate AArch64 UEFI firmware (.fd). Provide HYPER_THEME_EFI_CODE and HYPER_THEME_EFI_VARS, or install QEMU/EDK2.\n"
+                "Failed to locate AArch64 UEFI firmware code (.fd). "
+                "Provide HYPER_THEME_EFI_CODE (and optionally HYPER_THEME_EFI_VARS).\n"
             )
             return 1
         efi_code, efi_vars_src = fw
 
+    # Some QEMU builds ship edk2 AArch64 code but not an AArch64 vars template.
+    # In that case, prefer an ARM vars template if present; otherwise create a blank vars file.
+    if efi_vars_src is None:
+        for d in firmware_search_dirs:
+            cand = d / "edk2-arm-vars.fd"
+            if cand.is_file():
+                efi_vars_src = cand
+                break
+
     if not uefi_vars.exists():
-        shutil.copy2(efi_vars_src, uefi_vars)
+        if efi_vars_src and efi_vars_src.is_file():
+            shutil.copy2(efi_vars_src, uefi_vars)
+        else:
+            # 64 MiB vars (matches typical edk2 fd sizes in nixpkgs qemu share dir).
+            uefi_vars.write_bytes(b"\0" * (64 * 1024 * 1024))
+    # QEMU must be able to write UEFI variables.
+    try:
+        uefi_vars.chmod(0o600)
+    except PermissionError:
+        pass
 
     if not overlay_img.exists():
         _run([qemu_img, "create", "-f", "qcow2", "-F", "qcow2", "-b", str(base_img), str(overlay_img)])
