@@ -11,6 +11,7 @@
     branding = import ../system/branding.nix;
     services = import ../system/services.nix;
     debug = import ../system/debug.nix;
+    wifi-setup = import ../system/wifi-setup.nix;
     iso-base = import ../iso/base.nix;
     iso-grub-bootloader = import ../iso/grub-bootloader.nix;
   };
@@ -28,6 +29,7 @@
         self.nixosModules.hardware
         self.nixosModules.branding
         self.nixosModules.services
+        self.nixosModules.wifi-setup
         
         # ISO image infrastructure
         "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
@@ -38,6 +40,12 @@
           isoImage.volumeID = "HYPER_RECOVERY";
           image.fileName = "snosu-hyper-recovery-x86_64-linux.iso";
           isoImage.prependToMenuLabel = "START HYPER RECOVERY";
+          
+          # Enable WiFi setup service
+          services.hyper-wifi-setup = {
+            enable = true;
+            autoStartTui = true;
+          };
         }
       ];
     };
@@ -53,6 +61,7 @@
         self.nixosModules.hardware
         self.nixosModules.branding
         self.nixosModules.services
+        self.nixosModules.wifi-setup
         
         # Debug enhancements (the ONLY difference)
         self.nixosModules.debug
@@ -66,6 +75,12 @@
           isoImage.volumeID = "HYPER_RECOVERY_DEBUG";
           image.fileName = "snosu-hyper-recovery-debug-x86_64-linux.iso";
           isoImage.prependToMenuLabel = "START HYPER RECOVERY (Debug)";
+          
+          # Enable WiFi setup service
+          services.hyper-wifi-setup = {
+            enable = true;
+            autoStartTui = true;
+          };
         }
       ];
     };

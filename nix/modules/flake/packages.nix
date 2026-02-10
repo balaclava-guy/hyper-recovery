@@ -18,6 +18,9 @@
       
       # Firmware package
       hyper-firmware-core = (pkgs.callPackage ../../packages/firmware.nix {}).hyperFirmwareCore;
+      
+      # WiFi setup daemon
+      hyper-wifi-setup = pkgs.callPackage ../../packages/hyper-wifi-setup.nix {};
     } // {
       # Theme VM (cross-platform)
       theme-vm = pkgs.stdenvNoCC.mkDerivation {

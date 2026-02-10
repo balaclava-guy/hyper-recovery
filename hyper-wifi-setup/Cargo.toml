@@ -1,0 +1,57 @@
+[package]
+name = "hyper-wifi-setup"
+version = "0.1.0"
+edition = "2021"
+description = "WiFi setup daemon with TUI and captive portal for Hyper Recovery"
+license = "MIT"
+
+[[bin]]
+name = "hyper-wifi-setup"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full", "signal"] }
+
+# D-Bus for NetworkManager
+zbus = { version = "4", default-features = false, features = ["tokio"] }
+zvariant = "4"
+
+# Web server + Leptos
+axum = { version = "0.7", features = ["tokio"] }
+axum-extra = { version = "0.9", features = ["typed-header"] }
+leptos = { version = "0.6", features = ["ssr"] }
+leptos_axum = "0.6"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["fs", "trace"] }
+
+# TUI
+ratatui = "0.28"
+crossterm = { version = "0.28", features = ["event-stream"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Utilities
+thiserror = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+uuid = { version = "1", features = ["v4"] }
+qrcode = "0.14"
+futures = "0.3"
+
+# IPC
+tokio-util = { version = "0.7", features = ["codec"] }
+
+# Embedded assets
+rust-embed = "8"
+mime_guess = "2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
