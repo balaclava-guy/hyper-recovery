@@ -10,6 +10,28 @@
     system = "x86_64-linux";
     pkgs = import nixpkgs { inherit system; };
 
+    # TODO(2026-02-10): Temporary workaround.
+    #
+    # NixOS Cockpit's module builds a `cockpit-plugins-env` buildEnv that links `/bin`
+    # from all plugin `passthru.cockpitPath` entries. On our pinned nixpkgs, Cockpit
+    # itself pulls Python 3.13 while `cockpit-zfs` pulls a Python 3.12 env, and both
+    # provide `bin/idle3`, causing a buildEnv path collision in CI.
+    #
+    # Remove once nixpkgs resolves the Python version mismatch, or the Cockpit module
+    # stops linking `/bin` from plugin dependency envs.
+    cockpitZfsOverlay = final: prev: {
+      # Prefer dropping Cockpit's python from cockpitPath (to avoid buildEnv /bin collisions)
+      # over dropping cockpit-zfs' python, since cockpit-zfs explicitly depends on python312.
+      cockpit = prev.cockpit.overrideAttrs (old: {
+        passthru = (old.passthru or {}) // {
+          cockpitPath =
+            prev.lib.filter
+              (p: !(prev.lib.hasInfix "python3" (builtins.toString p)))
+              (old.passthru.cockpitPath or []);
+        };
+      });
+    };
+
     # Common OS configuration (The Payload)
     payload = ./payload.nix;
 
@@ -19,6 +41,7 @@
     myOS = nixpkgs.lib.nixosSystem {
       inherit system;
       modules = [
+        { nixpkgs.overlays = [ cockpitZfsOverlay ]; }
         payload
         packaging.images
       ];
