@@ -9,11 +9,15 @@
 
   users.mutableUsers = false;
   users.users.root = {
-    password = "nixos";
     initialPassword = lib.mkForce null;
     hashedPassword = lib.mkForce null;
     hashedPasswordFile = lib.mkForce null;
     initialHashedPassword = lib.mkForce null;
+  };
+  users.users.snosu = {
+    isNormalUser = true;
+    password = "nixos";
+    extraGroups = [ "wheel" ];
   };
 
   boot.kernelParams = [

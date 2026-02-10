@@ -105,7 +105,7 @@ The ISO image is a **hybrid boot image** designed for USB:
 
 1.  **Boot**: Write to USB or copy to Ventoy partition
 2.  **Login**:
-    -   User: `root`
+    -   User: `snosu`
     -   Password: `nixos`
 3.  **Cockpit**: Access `https://<IP_ADDRESS>:9090`
 4.  **ZFS Import**:
@@ -130,3 +130,15 @@ The system includes a custom Plymouth theme. If it doesn't display:
 - **BIOS mode not working**: Ensure the USB is bootable in legacy mode in BIOS settings
 - **EFI mode not working**: Try disabling Secure Boot in UEFI settings
 - **Ventoy not detecting**: Ensure the `.iso` file is in the root of the Ventoy partition
+
+### Cockpit Login / Connection Failed
+
+If the browser shows `Connection failed` after login, inspect the socket-activated Cockpit units
+instead of only `journalctl -u cockpit`:
+
+```bash
+systemctl status cockpit.socket cockpit.service cockpit-wsinstance-http.service cockpit-session@*
+journalctl -b -u cockpit.socket -u cockpit.service -u 'cockpit-wsinstance*' -u 'cockpit-session*' --no-pager
+```
+
+Also use `https://<IP_ADDRESS>:9090` (not `http://`) to avoid session/websocket issues on some clients.
