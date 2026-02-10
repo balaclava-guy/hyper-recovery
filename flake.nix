@@ -3,6 +3,9 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    flake-parts.url = "github:hercules-ci/flake-parts";
+    devshell.url = "github:numtide/devshell";
+    devshell.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs = { self, nixpkgs, ... }@inputs:
@@ -48,6 +51,7 @@
             ++ lib.optionals (system == "aarch64-darwin") [
               pkgs.python3
               pkgs.qemu
+              pkgs.mtools
               pkgs.xorriso
             ];
         };
@@ -79,6 +83,8 @@
             substituteInPlace $out/bin/theme-vm \
               --replace-fail "@qemu_system_aarch64@" "${pkgs.qemu}/bin/qemu-system-aarch64" \
               --replace-fail "@qemu_img@" "${pkgs.qemu}/bin/qemu-img" \
+              --replace-fail "@mformat@" "${pkgs.mtools}/bin/mformat" \
+              --replace-fail "@mcopy@" "${pkgs.mtools}/bin/mcopy" \
               --replace-fail "@xorriso@" "${pkgs.xorriso}/bin/xorriso" \
               --replace-fail "@firmware_search_dirs@" ""
 
