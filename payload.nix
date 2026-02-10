@@ -227,7 +227,7 @@ EOF
   snosuPlymouthTheme = pkgs.stdenv.mkDerivation {
     pname = "snosu-hyper-recovery-plymouth";
     version = "1.0";
-    src = ./snosu-hyper-recovery;
+    src = ./themes/plymouth/hyper-recovery;
     fontSrc = ./assets/fonts/undefined-medium/undefined-medium.ttf;
     
     nativeBuildInputs = [ pkgs.plymouth ];
@@ -239,6 +239,7 @@ EOF
       cp snosu-hyper-recovery.plymouth $out/share/plymouth/themes/snosu-hyper-recovery/
       cp snosu-hyper-recovery.script $out/share/plymouth/themes/snosu-hyper-recovery/
       cp *.png $out/share/plymouth/themes/snosu-hyper-recovery/
+      cp -r animation $out/share/plymouth/themes/snosu-hyper-recovery/
       
       # Copy and install font
       mkdir -p $out/share/fonts/truetype
@@ -268,7 +269,7 @@ EOF
   snosuGrubTheme = pkgs.stdenv.mkDerivation {
     pname = "snosu-hyper-recovery-grub";
     version = "1.0";
-    src = ./snosu-hyper-recovery/grub;
+    src = ./themes/grub/hyper-recovery;
     fontSrc = ./assets/fonts/undefined-medium/undefined-medium.ttf;
     
     nativeBuildInputs = [ pkgs.grub2 ];
@@ -392,17 +393,17 @@ in
   # Cockpit Branding
   # Cockpit 353+ reads branding from flat files in /etc/cockpit/branding/.
   environment.etc."cockpit/branding/branding.css".source = ./branding/snosu/branding.css;
-  environment.etc."cockpit/branding/logo.png".source = ./branding/snosu/logo.png;
-  environment.etc."cockpit/branding/brand-large.png".source = ./branding/snosu/logo.png;
-  environment.etc."cockpit/branding/apple-touch-icon.png".source = ./branding/snosu/logo.png;
-  environment.etc."cockpit/branding/favicon.ico".source = ./branding/snosu/logo.png;
+  environment.etc."cockpit/branding/logo.png".source = ./assets/branding/logo-source.png;
+  environment.etc."cockpit/branding/brand-large.png".source = ./assets/branding/logo-source.png;
+  environment.etc."cockpit/branding/apple-touch-icon.png".source = ./assets/branding/logo-source.png;
+  environment.etc."cockpit/branding/favicon.ico".source = ./assets/branding/logo-source.png;
   # Keep legacy layout for compatibility with older Cockpit behavior.
   environment.etc."cockpit/branding/snosu/branding.ini".source = ./branding/snosu/branding.ini;
   environment.etc."cockpit/branding/snosu/branding.css".source = ./branding/snosu/branding.css;
-  environment.etc."cockpit/branding/snosu/logo.png".source = ./branding/snosu/logo.png;
-  environment.etc."cockpit/branding/snosu/brand-large.png".source = ./branding/snosu/logo.png;
-  environment.etc."cockpit/branding/snosu/apple-touch-icon.png".source = ./branding/snosu/logo.png;
-  environment.etc."cockpit/branding/snosu/favicon.ico".source = ./branding/snosu/logo.png;
+  environment.etc."cockpit/branding/snosu/logo.png".source = ./assets/branding/logo-source.png;
+  environment.etc."cockpit/branding/snosu/brand-large.png".source = ./assets/branding/logo-source.png;
+  environment.etc."cockpit/branding/snosu/apple-touch-icon.png".source = ./assets/branding/logo-source.png;
+  environment.etc."cockpit/branding/snosu/favicon.ico".source = ./assets/branding/logo-source.png;
 
   # UI & Branding
   environment.etc."motd".text = ''
