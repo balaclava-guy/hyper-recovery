@@ -125,6 +125,27 @@ def _make_cloud_init_seed_iso(xorriso: str, seed_dir: Path, out_iso: Path) -> No
     )
 
 
+def _make_fat_theme_drive_image(mformat: str, mcopy: str, share_dir: Path, out_img: Path) -> None:
+    # Create a small FAT image with a stable volume label so the guest can mount it via:
+    #   /dev/disk/by-label/HYPERTHEME
+    #
+    # This avoids relying on QEMU's fat:rw pseudo-drive, which has no stable label and
+    # tends to force manual mounting/debugging.
+    out_img.parent.mkdir(parents=True, exist_ok=True)
+    if out_img.exists():
+        out_img.unlink()
+
+    # 256 MiB is plenty for these theme assets.
+    with out_img.open("wb") as f:
+        f.truncate(256 * 1024 * 1024)
+
+    _run([mformat, "-i", str(out_img), "-v", "HYPERTHEME", "::"])
+
+    # Copy each top-level entry so we don't depend on shell globbing behavior.
+    for item in sorted(share_dir.iterdir(), key=lambda p: p.name):
+        _run([mcopy, "-s", "-i", str(out_img), str(item), "::/"])
+
+
 def _write_cloud_init(seed_dir: Path) -> None:
     seed_dir.mkdir(parents=True, exist_ok=True)
     (seed_dir / "meta-data").write_text(
@@ -166,6 +187,10 @@ def _write_cloud_init(seed_dir: Path) -> None:
                   stamp="$state_dir/last.sha256"
 
                   find_theme_dev() {
+                    if [[ -e /dev/disk/by-label/HYPERTHEME ]]; then
+                      readlink -f /dev/disk/by-label/HYPERTHEME
+                      return 0
+                    fi
                     while IFS= read -r dev; do
                       mnt="$(mktemp -d)"
                       if mount -t vfat -o ro "$dev" "$mnt" 2>/dev/null; then
@@ -360,6 +385,10 @@ def _write_nixos_module(dest: Path) -> None:
               haveThemeSrc = builtins.pathExists themeSrcPath;
               themeSrc = if haveThemeSrc then themeSrcPath else null;
 
+              # Known password ("nixos") for the dev VM.
+              # sha512crypt hash generated with: openssl passwd -6 -salt hyper-theme nixos
+              pwHash = "$6$hyper-theme$Hv7WUOJ8Z215tv2aZTJIxG10sPxyQ/V2NTUvrornk9AXtH8X0n7SlN5L9LssQVQ2pj5vJGofm3hUgt1zglKqa0";
+
               grubTheme = if haveThemeSrc then (pkgs.stdenvNoCC.mkDerivation {
                 pname = "snosu-hyper-recovery-grub-theme";
                 version = "0";
@@ -408,6 +437,10 @@ def _write_nixos_module(dest: Path) -> None:
                 stamp="$state_dir/last.sha256"
 
                 find_theme_dev() {
+                  if [ -e /dev/disk/by-label/HYPERTHEME ]; then
+                    readlink -f /dev/disk/by-label/HYPERTHEME
+                    return 0
+                  fi
                   while IFS= read -r dev; do
                     mnt="$(mktemp -d)"
                     if ${pkgs.util-linux}/bin/mount -t vfat -o ro "$dev" "$mnt" 2>/dev/null; then
@@ -432,8 +465,14 @@ def _write_nixos_module(dest: Path) -> None:
 
                 mnt=/mnt/hyper-theme
                 mkdir -p "$mnt"
-                ${pkgs.util-linux}/bin/mount -t vfat -o ro "$dev" "$mnt"
-                trap '${pkgs.util-linux}/bin/umount "$mnt" 2>/dev/null || true' EXIT
+                # If a fileSystems entry exists (automount), this will mount on first access.
+                if [ -e /dev/disk/by-label/HYPERTHEME ] && [ ! -e "$mnt/THEME_SYNC_MARKER" ]; then
+                  true
+                fi
+                if [ ! -e "$mnt/THEME_SYNC_MARKER" ]; then
+                  ${pkgs.util-linux}/bin/mount -t vfat -o ro "$dev" "$mnt"
+                  trap '${pkgs.util-linux}/bin/umount "$mnt" 2>/dev/null || true' EXIT
+                fi
 
                 hold_seconds="$(${pkgs.coreutils}/bin/cat "$mnt/HOLD_SECONDS" 2>/dev/null || echo 8)"
                 if ! [[ "$hold_seconds" =~ ^[0-9]+$ ]]; then hold_seconds=8; fi
@@ -482,18 +521,34 @@ def _write_nixos_module(dest: Path) -> None:
               '';
             in
             {
+              # Make SSH + console usable immediately, with known credentials.
+              users.mutableUsers = false;
+              users.users.root.hashedPassword = pwHash;
+              users.users.theme = {
+                isNormalUser = true;
+                extraGroups = [ "wheel" ];
+                hashedPassword = pwHash;
+              };
+              security.sudo.wheelNeedsPassword = false;
+
+              services.getty.autologinUser = "theme";
+
+              services.openssh.enable = true;
+              services.openssh.settings.PasswordAuthentication = true;
+              services.openssh.settings.KbdInteractiveAuthentication = true;
+              services.openssh.settings.PermitRootLogin = "yes";
+
               # Make sure GRUB is used (so we can preview the GRUB theme).
               boot.loader.systemd-boot.enable = false;
-              # NixOS asserts that canTouchEfiVariables and efiInstallAsRemovable can't both be enabled.
-              # For this VM, installing GRUB to the removable path is sufficient.
-              boot.loader.efi.canTouchEfiVariables = false;
+              # In a VM we can safely use EFI variables; this makes GRUB the default boot entry
+              # (and avoids getting stuck in a previous systemd-boot entry stored in the vars file).
+              boot.loader.efi.canTouchEfiVariables = true;
               boot.loader.efi.efiSysMountPoint = "/boot";
 
               boot.loader.grub = {
                 enable = true;
                 efiSupport = true;
                 device = "nodev";
-                efiInstallAsRemovable = true;
                 theme = lib.mkIf haveThemeSrc grubTheme;
 
                 # We'll override GRUB's real timeout via extraConfig; keep a non-negative value here.
@@ -515,6 +570,14 @@ def _write_nixos_module(dest: Path) -> None:
               boot.plymouth.enable = true;
               boot.plymouth.theme = lib.mkIf haveThemeSrc "snosu-hyper-recovery";
               boot.plymouth.themePackages = lib.mkIf haveThemeSrc [ plymouthTheme ];
+
+              # Auto-mount the theme drive for debugging convenience. (hyper-theme-sync also
+              # knows how to mount it directly if needed.)
+              fileSystems."/mnt/hyper-theme" = {
+                device = "/dev/disk/by-label/HYPERTHEME";
+                fsType = "vfat";
+                options = [ "ro" "nofail" "x-systemd.automount" ];
+              };
 
               # Keep Plymouth visible for theme iteration by delaying plymouth-quit.
               # Avoid `environment.etc` drop-ins here; they can conflict with other etc entries.
@@ -645,17 +708,6 @@ def _write_nixos_install_script(dest: Path) -> None:
               networking.hostName = "hyper-theme-vm";
               time.timeZone = "UTC";
 
-              users.users.theme = {
-                isNormalUser = true;
-                extraGroups = [ "wheel" ];
-                initialPassword = "theme";
-              };
-              security.sudo.wheelNeedsPassword = false;
-
-              services.openssh.enable = true;
-              services.openssh.settings.PasswordAuthentication = true;
-              services.openssh.settings.PermitRootLogin = "no";
-
               nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
               system.stateVersion = "$state_version";
@@ -668,6 +720,11 @@ def _write_nixos_install_script(dest: Path) -> None:
             cp -R "$theme_mnt/assets" /mnt/etc/nixos/hyper-theme-src/
 
             nixos-install --no-root-passwd
+
+            # Ensure we can actually log in (console + SSH) even if activation scripts
+            # don't run in the way we expect during install.
+            nixos-enter --root /mnt -c 'echo "root:nixos" | chpasswd'
+            nixos-enter --root /mnt -c 'echo "theme:nixos" | chpasswd' || true
 
             echo "Install complete. Rebooting..." >&2
             reboot
@@ -706,6 +763,11 @@ def _write_nixos_install_readme(dest: Path) -> None:
             After install, re-run:
 
               nix run .#theme-vm -- --base nixos
+
+            Default credentials (installed system):
+              user: theme
+              pass: nixos
+              ssh:  ssh -p 2222 theme@127.0.0.1
             """
         ),
         encoding="utf-8",
@@ -818,11 +880,14 @@ def main() -> int:
     overlay_img = cache_dir / "ubuntu-overlay.qcow2"
     nixos_iso = cache_dir / "nixos-minimal-aarch64.iso"
     nixos_disk = cache_dir / "nixos-disk.qcow2"
+    theme_drive_img = cache_dir / "theme-drive.img"
     uefi_vars = cache_dir / "uefi-vars.fd"
 
     # These tokens are replaced by Nix in the flake package.
     qemu_system = os.environ.get("QEMU_SYSTEM_AARCH64", "@qemu_system_aarch64@")
     qemu_img = os.environ.get("QEMU_IMG", "@qemu_img@")
+    mformat = os.environ.get("MFORMAT", "@mformat@")
+    mcopy = os.environ.get("MCOPY", "@mcopy@")
     xorriso = os.environ.get("XORRISO", "@xorriso@")
     firmware_roots_raw = os.environ.get("FIRMWARE_SEARCH_DIRS", "@firmware_search_dirs@")
 
@@ -834,6 +899,10 @@ def main() -> int:
         qemu_img = _which("qemu-img") or ""
     if xorriso.startswith("@"):
         xorriso = _which("xorriso") or ""
+    if mformat.startswith("@"):
+        mformat = _which("mformat") or ""
+    if mcopy.startswith("@"):
+        mcopy = _which("mcopy") or ""
     if firmware_roots_raw.startswith("@"):
         firmware_roots_raw = ""
 
@@ -845,6 +914,10 @@ def main() -> int:
         return 1
     if not xorriso:
         sys.stderr.write("Missing xorriso in PATH (or XORRISO not set).\n")
+        return 1
+    if not mformat or not mcopy:
+        sys.stderr.write("Missing mtools (mformat/mcopy) in PATH.\n")
+        sys.stderr.write("If using the flake package, add nixpkgs.mtools to the environment.\n")
         return 1
 
     firmware_search_dirs: list[Path] = []
@@ -911,6 +984,9 @@ def main() -> int:
     _write_nixos_module(share_dir / "nixos" / "hyper-theme.nix")
     _write_nixos_install_script(share_dir / "hyper-nixos-install")
     _write_nixos_install_readme(share_dir / "README-NIXOS-INSTALL.txt")
+
+    # Create a labeled FAT image for the share drive (so the guest can mount it automatically).
+    _make_fat_theme_drive_image(mformat, mcopy, share_dir, theme_drive_img)
 
     efi_code_env = os.environ.get("HYPER_THEME_EFI_CODE", "")
     efi_vars_env = os.environ.get("HYPER_THEME_EFI_VARS", "")
@@ -1048,8 +1124,8 @@ def main() -> int:
                 ]
             )
 
-    # Attach the theme share last so it doesn't become /dev/vda.
-    qemu_args.extend(["-drive", f"if=virtio,format=raw,file=fat:rw:{share_dir}"])
+    # Attach the theme drive last so it doesn't become /dev/vda.
+    qemu_args.extend(["-drive", f"if=virtio,format=raw,file={theme_drive_img}"])
 
     if args.headless:
         qemu_args.append("-nographic")
