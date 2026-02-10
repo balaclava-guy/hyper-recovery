@@ -7,12 +7,14 @@ terminal-box: "terminal_box_*.png"
 terminal-font: "Hyper Fighting Regular 16"
 
 # Logo (Left Side)
+# Note: Avoid specifying both width and height for the logo. Some GRUB builds
+# appear to preserve aspect ratio and will effectively "fitheight", causing the
+# image to scale too large and overlap the menu.
 + image {
     file = "logo.png"
-    left = 0%
-    top = 10%
-    width = 48%
-    height = 80%
+    left = 2%
+    top = 18%
+    width = 46%
 }
 
 # Boot Menu (Right Side)
