@@ -54,6 +54,16 @@
         "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
       ];
     };
+
+    # Minimal ISO purely for iterating on GRUB + Plymouth themes.
+    themeOS = nixpkgs.lib.nixosSystem {
+      inherit system;
+      modules = [
+        ./theme-preview-iso.nix
+        "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
+        ./grub-iso-image.nix
+      ];
+    };
   in
   {
     devShells.${system}.default = pkgs.mkShell {
@@ -71,6 +81,9 @@
 
       # POC minimal ISO for initrd log capture
       poc-iso = pocOS.config.system.build.isoImage;
+
+      # Theme preview ISO (GRUB theme + Plymouth theme, minimal userspace)
+      theme-iso = themeOS.config.system.build.isoImage;
 
       poc-images-7z = pkgs.runCommand "snosu-hyper-recovery-poc-7z" {
         nativeBuildInputs = [ pkgs._7zz pkgs.coreutils ];

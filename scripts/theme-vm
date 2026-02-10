@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  scripts/theme-vm [--efi] [--serial SERIAL_LOG] [--no-build] [--]
+
+Builds the minimal theme ISO (x86_64-linux) and boots it in QEMU on macOS.
+
+Options:
+  --efi                 Boot with OVMF (UEFI) if available; otherwise falls back to BIOS.
+  --serial PATH         Write guest serial output to PATH (default: disabled).
+  --no-build            Skip nix build step; reuse ./result-theme-iso if present.
+EOF
+}
+
+BOOT_MODE="bios"
+SERIAL_LOG=""
+DO_BUILD=1
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --efi) BOOT_MODE="efi"; shift ;;
+    --serial) SERIAL_LOG="${2:-}"; shift 2 ;;
+    --no-build) DO_BUILD=0; shift ;;
+    -h|--help) usage; exit 0 ;;
+    --) shift; break ;;
+    *) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
+  esac
+done
+
+OUT_LINK="$ROOT_DIR/result-theme-iso"
+if [[ "$DO_BUILD" -eq 1 ]]; then
+  nix build -L ".#packages.x86_64-linux.theme-iso" -o "$OUT_LINK"
+fi
+
+shopt -s nullglob
+isos=("$OUT_LINK"/iso/*.iso)
+if [[ "${#isos[@]}" -eq 0 ]]; then
+  echo "No ISO found under $OUT_LINK/iso" >&2
+  ls -lah "$OUT_LINK" >&2 || true
+  exit 1
+fi
+ISO="${isos[0]}"
+
+qemu_args=(
+  -machine q35
+  -accel tcg,thread=multi
+  -cpu qemu64
+  -m 2048
+  -smp 2
+  -boot d
+  -cdrom "$ISO"
+  -vga virtio
+  -usb -device usb-kbd -device usb-mouse
+)
+
+if [[ -n "$SERIAL_LOG" ]]; then
+  qemu_args+=(-serial "file:$SERIAL_LOG")
+fi
+
+if [[ "$BOOT_MODE" == "efi" ]]; then
+  # Best-effort: try to locate OVMF from nixpkgs on macOS. If it doesn't exist,
+  # just boot BIOS (GRUB theme is the same either way).
+  set +e
+  ovmf_out="$(nix build --no-link --print-out-paths nixpkgs#OVMF 2>/dev/null | tail -n 1)"
+  set -e
+  if [[ -n "${ovmf_out:-}" ]] && [[ -f "$ovmf_out/FV/OVMF.fd" ]]; then
+    qemu_args+=(-bios "$ovmf_out/FV/OVMF.fd")
+  else
+    echo "OVMF not available via nixpkgs#OVMF; falling back to BIOS boot." >&2
+  fi
+fi
+
+if command -v qemu-system-x86_64 >/dev/null 2>&1; then
+  exec qemu-system-x86_64 "${qemu_args[@]}"
+fi
+
+exec nix shell nixpkgs#qemu --command qemu-system-x86_64 "${qemu_args[@]}"
