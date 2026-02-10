@@ -1,5 +1,7 @@
 { self, inputs, ... }:
 
+# Flake-parts module for developer environment
+
 {
   imports = [ inputs.devshell.flakeModule ];
   
@@ -10,7 +12,7 @@
       packages = with pkgs; [
         p7zip
         nixpkgs-fmt
-        statix  # Nix linter
+        statix
       ] ++ lib.optionals (system == "aarch64-darwin") [
         python3
         qemu
@@ -71,19 +73,15 @@
       ];
       
       motd = ''
-        {202}🚀 Snosu Hyper Recovery Development Environment{reset}
+        {202}Snosu Hyper Recovery Development Environment{reset}
         
         $(type -p menu &>/dev/null && menu)
         
         {bold}Quick Start:{reset}
-          • build-usb          - Build regular recovery image
-          • build-usb-debug    - Build debug recovery image  
-          • check              - Validate flake
-          • run-theme-vm       - Preview boot themes
-        
-        {bold}Documentation:{reset}
-          • README.md          - Project overview
-          • nix/README.md      - Module architecture
+          build-usb          - Build regular recovery image
+          build-usb-debug    - Build debug recovery image  
+          check              - Validate flake
+          run-theme-vm       - Preview boot themes
       '';
     };
   };

@@ -1,11 +1,11 @@
 { config, pkgs, lib, ... }:
 
 # Hardware configuration for Hyper Recovery environment
-# This module contains kernel, firmware, and driver configuration
+# Kernel, firmware, and driver configuration
 # WITHOUT any debug features (clean, production-ready)
 
 let
-  firmware = import ../packages/firmware.nix { inherit pkgs lib; };
+  firmware = import ../../packages/firmware.nix { inherit pkgs lib; };
   hyperFirmwareCore = firmware.hyperFirmwareCore;
 in
 {
@@ -14,13 +14,13 @@ in
   boot.kernelParams = [ 
     "quiet" 
     "splash" 
-    "loglevel=0"                    # Suppress all but critical messages
+    "loglevel=0"
     "rd.systemd.show_status=false" 
     "rd.udev.log_level=3" 
     "udev.log_priority=3" 
     "vt.global_cursor_default=0"
-    "fbcon=nodefer"                   # Take over framebuffer early
-    "plymouth.ignore-serial-consoles"  # Prevent serial console interference
+    "fbcon=nodefer"
+    "plymouth.ignore-serial-consoles"
     "iwlwifi.power_save=0"
   ];
   
@@ -28,7 +28,7 @@ in
   boot.consoleLogLevel = 0;
   boot.initrd.verbose = false;
   
-  # KMS drivers for Plymouth (critical for boot splash to work)
+  # KMS drivers for Plymouth (critical for boot splash)
   # AND storage drivers for boot (critical for finding root device)
   boot.initrd.kernelModules = [ 
     # Graphics

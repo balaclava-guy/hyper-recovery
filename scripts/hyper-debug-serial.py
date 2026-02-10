@@ -2,12 +2,12 @@
 """
 hyper-debug-serial: Dump diagnostic information to serial console.
 
-This script is designed to run automatically when hyper.debug=1 is passed
-as a kernel parameter. It collects diagnostics via hyper-debug and outputs
-key information to the serial console for debugging boot issues in headless
-environments.
+This script runs automatically in debug builds of Hyper Recovery.
+It collects diagnostics via hyper-debug and outputs key information
+to the serial console for debugging boot issues in headless environments.
 
-This is typically invoked by the hyper-debug-serial systemd service.
+This is invoked by the hyper-debug-serial systemd service which is
+only present in the debug ISO variant.
 
 Usage:
     hyper-debug-serial

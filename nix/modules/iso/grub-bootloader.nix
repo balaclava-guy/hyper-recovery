@@ -10,17 +10,10 @@
 { config, lib, pkgs, ... }:
 
 let
-  # Timeout in grub is in seconds.
-  # null means max timeout (infinity)
-  # 0 means disable timeout
   grubTimeout = if config.boot.loader.timeout == null then -1 else config.boot.loader.timeout;
-
-  # Target architecture for EFI
   targetArch = if config.boot.loader.grub.forcei686 then "ia32" else pkgs.stdenv.hostPlatform.efiArch;
-
   grubPkgs = if config.boot.loader.grub.forcei686 then pkgs.pkgsi686Linux else pkgs;
 
-  # Options submenus (same as upstream iso-image.nix)
   optionsSubMenus = [
     { title = "Copy ISO Files to RAM"; class = "copytoram"; params = [ "copytoram" ]; }
     { title = "No modesetting"; class = "nomodeset"; params = [ "nomodeset" ]; }
@@ -33,7 +26,6 @@ let
     { title = "Serial console=ttyS0,115200n8"; class = "serial"; params = [ "console=ttyS0,115200n8" ]; }
   ];
 
-  # Build a single menu entry
   menuBuilderGrub2 = { name, class, image, params, initrd }: ''
     menuentry '${name}' --class ${class} {
       linux ${image} ''${isoboot} ${params}
@@ -41,7 +33,6 @@ let
     }
   '';
 
-  # Build all menu entries
   buildMenuGrub2 = { cfg ? config, params ? [] }:
     let
       menuConfig = {
@@ -69,15 +60,9 @@ let
       )}
     '';
 
-  # Unified GRUB menu configuration (works for both BIOS and EFI)
   grubMenuCfg = ''
     set textmode=${lib.boolToString (config.isoImage.forceTextMode)}
 
-    #
-    # Menu configuration
-    #
-
-    # Search using a "marker file"
     search --set=root --file /boot/grub/nixos-iso-marker
 
     insmod all_video
@@ -85,16 +70,8 @@ let
     insmod png
     set gfxpayload=keep
     set gfxmode=${lib.concatStringsSep "," [
-      "1920x1200"
-      "1920x1080"
-      "1366x768"
-      "1280x800"
-      "1280x720"
-      "1200x1920"
-      "1024x768"
-      "800x1280"
-      "800x600"
-      "auto"
+      "1920x1200" "1920x1080" "1366x768" "1280x800" "1280x720"
+      "1200x1920" "1024x768" "800x1280" "800x600" "auto"
     ]}
 
     if [ "$textmode" == "false" ]; then
@@ -103,15 +80,12 @@ let
     else
       terminal_output console
       terminal_input  console
-      # Sets colors for console term.
       set menu_color_normal=cyan/blue
       set menu_color_highlight=white/blue
     fi
 
     ${if config.isoImage.grubTheme != null then ''
-      # Sets theme.
       set theme=($root)/boot/grub/theme/theme.txt
-      # Load theme fonts
       $(find ${config.isoImage.grubTheme} -iname '*.pf2' -printf "loadfont ($root)/boot/grub/theme/%P\n")
     '' else ''
       if background_image ($root)/boot/grub/background.png; then
@@ -138,7 +112,6 @@ let
     ''}
   '';
 
-  # The unified grub.cfg that works for both BIOS and EFI
   grubCfg = pkgs.writeText "grub.cfg" ''
     set timeout=${toString grubTimeout}
 
@@ -151,15 +124,9 @@ let
 
     ${grubMenuCfg}
 
-    # If the parameter iso_path is set, append the findiso parameter to the kernel
-    # line. We need this to allow the nixos iso to be booted from grub directly.
     if [ ''${iso_path} ] ; then
       set isoboot="findiso=''${iso_path}"
     fi
-
-    #
-    # Menu entries
-    #
 
     ${buildMenuGrub2 {}}
     submenu "Options" --class submenu {
@@ -181,65 +148,42 @@ let
     }
   '';
 
-  # Modules needed for both BIOS and EFI GRUB
   grubModules = [
-    # Filesystem and partition support
     "fat" "iso9660" "udf" "part_gpt" "part_msdos"
-    # Core functionality
     "normal" "boot" "linux" "configfile" "loopback" "chain" "halt" "reboot"
-    # Search commands
     "search" "search_label" "search_fs_uuid" "search_fs_file"
-    # User commands
     "ls" "echo" "test" "true"
-    # Graphics
     "gfxmenu" "gfxterm" "gfxterm_background" "gfxterm_menu"
     "all_video" "videoinfo" "png"
-    # Other
     "loadenv" "serial"
   ];
 
-  # BIOS-specific modules
   biosModules = grubModules ++ [ "biosdisk" ];
-
-  # EFI-specific modules  
   efiModules = grubModules ++ [ "efi_gop" "efifwsetup" ]
     ++ lib.optional (builtins.pathExists "${grubPkgs.grub2_efi}/lib/grub/${grubPkgs.grub2_efi.grubTarget}/efi_uga.mod") "efi_uga";
 
-  # Build the unified GRUB directory with both BIOS and EFI support
   grubDir = pkgs.runCommand "grub-unified-directory"
     {
       nativeBuildInputs = [ pkgs.buildPackages.grub2 pkgs.buildPackages.grub2_efi ];
       strictDeps = true;
     }
     ''
-      mkdir -p $out/boot/grub/i386-pc
-      mkdir -p $out/boot/grub/x86_64-efi
-      mkdir -p $out/EFI/BOOT
+      mkdir -p $out/boot/grub/i386-pc $out/boot/grub/x86_64-efi $out/EFI/BOOT
 
-      # Create marker file for GRUB to find the ISO filesystem
       touch $out/boot/grub/nixos-iso-marker
-
-      # Copy the unified grub.cfg
       cp ${grubCfg} $out/boot/grub/grub.cfg
-
-      # Copy unicode font
       cp ${grubPkgs.grub2}/share/grub/unicode.pf2 $out/boot/grub/
 
-      # Copy theme if configured
       ${lib.optionalString (config.isoImage.grubTheme != null) ''
         mkdir -p $out/boot/grub/theme
         cp -r ${config.isoImage.grubTheme}/* $out/boot/grub/theme/
       ''}
 
-      # Copy background image
       ${lib.optionalString (config.isoImage.efiSplashImage != null) ''
         cp ${config.isoImage.efiSplashImage} $out/boot/grub/background.png
       ''}
 
       echo "Building GRUB BIOS image (i386-pc)..."
-      echo "Modules: ${toString biosModules}"
-
-      # Build BIOS core.img
       grub-mkimage \
         --directory=${pkgs.grub2}/lib/grub/i386-pc \
         --prefix=/boot/grub \
@@ -248,22 +192,15 @@ let
         --compression=auto \
         ${toString biosModules}
 
-      # Concatenate cdboot.img + core.img for El Torito BIOS boot
       cat ${pkgs.grub2}/lib/grub/i386-pc/cdboot.img \
           $out/boot/grub/i386-pc/core.img \
           > $out/boot/grub/eltorito.img
 
-      # Copy boot_hybrid.img for USB hybrid MBR boot
       cp ${pkgs.grub2}/lib/grub/i386-pc/boot_hybrid.img $out/boot/grub/
-
-      # Copy BIOS modules for runtime loading
       cp ${pkgs.grub2}/lib/grub/i386-pc/*.mod $out/boot/grub/i386-pc/
       cp ${pkgs.grub2}/lib/grub/i386-pc/*.lst $out/boot/grub/i386-pc/ 2>/dev/null || true
 
       echo "Building GRUB EFI image (${grubPkgs.grub2_efi.grubTarget})..."
-      echo "Modules: ${toString efiModules}"
-
-      # Build EFI image
       grub-mkimage \
         --directory=${grubPkgs.grub2_efi}/lib/grub/${grubPkgs.grub2_efi.grubTarget} \
         --prefix=/boot/grub \
@@ -271,19 +208,11 @@ let
         --format=${grubPkgs.grub2_efi.grubTarget} \
         ${toString efiModules}
 
-      # Copy EFI modules for runtime loading
       cp ${grubPkgs.grub2_efi}/lib/grub/${grubPkgs.grub2_efi.grubTarget}/*.mod $out/boot/grub/x86_64-efi/
       cp ${grubPkgs.grub2_efi}/lib/grub/${grubPkgs.grub2_efi.grubTarget}/*.lst $out/boot/grub/x86_64-efi/ 2>/dev/null || true
-
-      # Also copy grub.cfg to EFI directory (some firmwares look there)
       cp ${grubCfg} $out/EFI/BOOT/grub.cfg
-
-      echo "GRUB unified directory created successfully"
-      echo "BIOS boot image: $out/boot/grub/eltorito.img"
-      echo "EFI boot image: $out/EFI/BOOT/BOOT${lib.toUpper targetArch}.EFI"
     '';
 
-  # EFI boot image (FAT filesystem image for El Torito)
   efiImg = pkgs.runCommand "efi-image_eltorito"
     {
       nativeBuildInputs = [
@@ -296,28 +225,20 @@ let
     ''
       mkdir ./contents && cd ./contents
       mkdir -p ./EFI/BOOT
-
-      # Copy EFI bootloader and config
       cp "${grubDir}"/EFI/BOOT/* ./EFI/BOOT/
-
-      # Rewrite dates for reproducibility
       find . -exec touch --date=2000-01-01 {} +
 
-      # Calculate image size
       usage_size=$(( $(du -s --block-size=1M --apparent-size . | tr -cd '[:digit:]') * 1024 * 1024 ))
       image_size=$(( ($usage_size * 110) / 100 ))
       block_size=$((1024*1024))
       image_size=$(( ($image_size / $block_size + 1) * $block_size ))
-      # Minimum 2MB for FAT
       if [ $image_size -lt 2097152 ]; then
         image_size=2097152
       fi
-      echo "EFI image size: $image_size bytes"
 
       truncate --size=$image_size "$out"
       mkfs.vfat --invariant -i 12345678 -n EFIBOOT "$out"
 
-      # Copy files to FAT image
       for d in $(find EFI -type d | sort); do
         faketime "2000-01-01 00:00:00" mmd -i "$out" "::/$d"
       done
@@ -328,19 +249,131 @@ let
       fsck.vfat -vn "$out"
     '';
 
+  # Inline the ISO builder script instead of external file
+  makeGrubIsoImageScript = ''
+    stripSlash() {
+        res="$1"
+        if test "''${res:0:1}" = /; then res=''${res:1}; fi
+    }
+
+    escapeEquals() {
+        echo "$1" | sed -e 's/\\/\\\\/g' -e 's/=/\\=/g'
+    }
+
+    addPath() {
+        target="$1"
+        source="$2"
+        echo "$(escapeEquals "$target")=$(escapeEquals "$source")" >> pathlist
+    }
+
+    stripSlash "$bootImage"; bootImage="$res"
+
+    if test -n "$bootable"; then
+        for ((i = 0; i < ''${#targets[@]}; i++)); do
+            stripSlash "''${targets[$i]}"
+            if test "$res" = "$bootImage"; then
+                echo "copying the boot image ''${sources[$i]}"
+                cp "''${sources[$i]}" boot.img
+                chmod u+w boot.img
+                sources[$i]=boot.img
+            fi
+        done
+
+        isoBootFlags="-eltorito-boot ''${bootImage}
+                      -eltorito-catalog .boot.cat
+                      -no-emul-boot -boot-load-size 4 -boot-info-table
+                      --sort-weight 1 /boot/grub"
+    fi
+
+    if test -n "$usbBootable"; then
+        usbBootFlags="-isohybrid-mbr ''${isohybridMbrImage}"
+    fi
+
+    if test -n "$efiBootable"; then
+        efiBootFlags="-eltorito-alt-boot
+                      -e $efiBootImage
+                      -no-emul-boot
+                      -isohybrid-gpt-basdat"
+    fi
+
+    touch pathlist
+
+    for ((i = 0; i < ''${#targets[@]}; i++)); do
+        stripSlash "''${targets[$i]}"
+        addPath "$res" "''${sources[$i]}"
+    done
+
+    for i in $(< $closureInfo/store-paths); do
+        addPath "''${i:1}" "$i"
+    done
+
+    if [[ -n "$squashfsCommand" ]]; then
+        (out="nix-store.squashfs" eval "$squashfsCommand")
+        addPath "nix-store.squashfs" "nix-store.squashfs"
+    fi
+
+    if [[ ''${#objects[*]} != 0 ]]; then
+        cp $closureInfo/registration nix-path-registration
+        addPath "nix-path-registration" "nix-path-registration"
+    fi
+
+    for ((n = 0; n < ''${#objects[*]}; n++)); do
+        object=''${objects[$n]}
+        symlink=''${symlinks[$n]}
+        if test "$symlink" != "none"; then
+            mkdir -p $(dirname ./$symlink)
+            ln -s $object ./$symlink
+            addPath "$symlink" "./$symlink"
+        fi
+    done
+
+    mkdir -p $out/iso
+
+    xorriso="xorriso
+     -boot_image any gpt_disk_guid=$(uuid -v 5 daed2280-b91e-42c0-aed6-82c825ca41f3 $out | tr -d -)
+     -volume_date all_file_dates =$SOURCE_DATE_EPOCH
+     -as mkisofs
+     -iso-level 3
+     -volid ''${volumeID}
+     -appid nixos
+     -publisher nixos
+     -graft-points
+     -full-iso9660-filenames
+     -joliet
+     ''${isoBootFlags}
+     ''${usbBootFlags}
+     ''${efiBootFlags}
+     -r
+     -path-list pathlist
+     --sort-weight 0 /
+    "
+
+    $xorriso -output $out/iso/$isoName
+
+    if test -n "$compressImage"; then
+        echo "Compressing image..."
+        zstd -T$NIX_BUILD_CORES --rm $out/iso/$isoName
+    fi
+
+    mkdir -p $out/nix-support
+    echo $system > $out/nix-support/system
+
+    if test -n "$compressImage"; then
+        echo "file iso $out/iso/$isoName.zst" >> $out/nix-support/hydra-build-products
+    else
+        echo "file iso $out/iso/$isoName" >> $out/nix-support/hydra-build-products
+    fi
+  '';
+
 in
 {
   options.isoImage.useUnifiedGrub = lib.mkOption {
     type = lib.types.bool;
     default = false;
-    description = ''
-      Use unified GRUB2 bootloader for both BIOS and EFI boot instead of
-      syslinux for BIOS and GRUB for EFI.
-    '';
+    description = "Use unified GRUB2 bootloader for both BIOS and EFI boot.";
   };
 
   config = lib.mkIf config.isoImage.useUnifiedGrub {
-    # Override the default iso-image contents to use GRUB instead of syslinux
     isoImage.contents = lib.mkForce (
       let
         cfgFiles = cfg:
@@ -362,13 +395,11 @@ in
         { source = pkgs.writeText "version" config.system.nixos.label; target = "/version.txt"; }
       ]
       ++ lib.unique (cfgFiles config)
-      # GRUB unified boot files
       ++ [
         { source = "${grubDir}/boot/grub"; target = "/boot/grub"; }
         { source = "${grubDir}/EFI"; target = "/EFI"; }
         { source = efiImg; target = "/boot/efi.img"; }
       ]
-      # Loopback config for booting from other GRUB instances
       ++ lib.optionals (!config.boot.initrd.systemd.enable) [
         {
           source = (pkgs.writeTextDir "grub/loopback.cfg" "source /boot/grub/grub.cfg") + "/grub";
@@ -377,8 +408,6 @@ in
       ]
     );
 
-    # Override the ISO build to use GRUB for BIOS boot
-    # We use a custom ISO builder that replaces the /isolinux sort-weight with /boot/grub
     system.build.isoImage = lib.mkForce (
       let
         needSquashfs = config.isoImage.storeContents != [ ];
@@ -390,12 +419,10 @@ in
       pkgs.stdenv.mkDerivation {
         name = "${config.image.baseName}.iso";
         __structuredAttrs = true;
-
-        # the image will be self-contained so we can drop references
-        # to the closure that was used to build it
         unsafeDiscardReferences.out = true;
 
-        buildCommandPath = ./make-grub-iso-image.sh;
+        buildCommand = makeGrubIsoImageScript;
+        
         nativeBuildInputs = [
           pkgs.xorriso
           pkgs.zstd
@@ -405,15 +432,12 @@ in
         isoName = "${config.image.baseName}.iso";
         inherit (config.isoImage) compressImage volumeID;
 
-        # BIOS boot via GRUB El Torito image
         bootable = config.isoImage.makeBiosBootable;
         bootImage = "/boot/grub/eltorito.img";
 
-        # USB hybrid boot via GRUB's boot_hybrid.img
         usbBootable = config.isoImage.makeUsbBootable && config.isoImage.makeBiosBootable;
         isohybridMbrImage = "${grubDir}/boot/grub/boot_hybrid.img";
 
-        # EFI boot
         efiBootable = config.isoImage.makeEfiBootable;
         efiBootImage = "boot/efi.img";
 
@@ -424,11 +448,8 @@ in
         symlinks = [];
 
         squashfsCommand = lib.optionalString needSquashfs makeSquashfsDrv.buildCommand;
-
-        # For obtaining the closure of `storeContents'.
         closureInfo = pkgs.closureInfo { rootPaths = []; };
       }
     );
-
   };
 }

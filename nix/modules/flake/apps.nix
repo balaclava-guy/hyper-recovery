@@ -1,5 +1,7 @@
 { self, inputs, ... }:
 
+# Flake-parts module for flake apps
+
 {
   perSystem = { config, system, ... }: {
     apps = {
