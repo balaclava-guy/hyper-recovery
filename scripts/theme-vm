@@ -385,6 +385,10 @@ def _write_nixos_module(dest: Path) -> None:
               haveThemeSrc = builtins.pathExists themeSrcPath;
               themeSrc = if haveThemeSrc then themeSrcPath else null;
 
+              # Known password ("nixos") for the dev VM.
+              # sha512crypt hash generated with: openssl passwd -6 -salt hyper-theme nixos
+              pwHash = "$6$hyper-theme$Hv7WUOJ8Z215tv2aZTJIxG10sPxyQ/V2NTUvrornk9AXtH8X0n7SlN5L9LssQVQ2pj5vJGofm3hUgt1zglKqa0";
+
               grubTheme = if haveThemeSrc then (pkgs.stdenvNoCC.mkDerivation {
                 pname = "snosu-hyper-recovery-grub-theme";
                 version = "0";
@@ -517,18 +521,34 @@ def _write_nixos_module(dest: Path) -> None:
               '';
             in
             {
+              # Make SSH + console usable immediately, with known credentials.
+              users.mutableUsers = false;
+              users.users.root.hashedPassword = pwHash;
+              users.users.theme = {
+                isNormalUser = true;
+                extraGroups = [ "wheel" ];
+                hashedPassword = pwHash;
+              };
+              security.sudo.wheelNeedsPassword = false;
+
+              services.getty.autologinUser = "theme";
+
+              services.openssh.enable = true;
+              services.openssh.settings.PasswordAuthentication = true;
+              services.openssh.settings.KbdInteractiveAuthentication = true;
+              services.openssh.settings.PermitRootLogin = "yes";
+
               # Make sure GRUB is used (so we can preview the GRUB theme).
               boot.loader.systemd-boot.enable = false;
-              # NixOS asserts that canTouchEfiVariables and efiInstallAsRemovable can't both be enabled.
-              # For this VM, installing GRUB to the removable path is sufficient.
-              boot.loader.efi.canTouchEfiVariables = false;
+              # In a VM we can safely use EFI variables; this makes GRUB the default boot entry
+              # (and avoids getting stuck in a previous systemd-boot entry stored in the vars file).
+              boot.loader.efi.canTouchEfiVariables = true;
               boot.loader.efi.efiSysMountPoint = "/boot";
 
               boot.loader.grub = {
                 enable = true;
                 efiSupport = true;
                 device = "nodev";
-                efiInstallAsRemovable = true;
                 theme = lib.mkIf haveThemeSrc grubTheme;
 
                 # We'll override GRUB's real timeout via extraConfig; keep a non-negative value here.
@@ -688,17 +708,6 @@ def _write_nixos_install_script(dest: Path) -> None:
               networking.hostName = "hyper-theme-vm";
               time.timeZone = "UTC";
 
-              users.users.theme = {
-                isNormalUser = true;
-                extraGroups = [ "wheel" ];
-                initialPassword = "theme";
-              };
-              security.sudo.wheelNeedsPassword = false;
-
-              services.openssh.enable = true;
-              services.openssh.settings.PasswordAuthentication = true;
-              services.openssh.settings.PermitRootLogin = "no";
-
               nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
               system.stateVersion = "$state_version";
@@ -711,6 +720,11 @@ def _write_nixos_install_script(dest: Path) -> None:
             cp -R "$theme_mnt/assets" /mnt/etc/nixos/hyper-theme-src/
 
             nixos-install --no-root-passwd
+
+            # Ensure we can actually log in (console + SSH) even if activation scripts
+            # don't run in the way we expect during install.
+            nixos-enter --root /mnt -c 'echo "root:nixos" | chpasswd'
+            nixos-enter --root /mnt -c 'echo "theme:nixos" | chpasswd' || true
 
             echo "Install complete. Rebooting..." >&2
             reboot
@@ -749,6 +763,11 @@ def _write_nixos_install_readme(dest: Path) -> None:
             After install, re-run:
 
               nix run .#theme-vm -- --base nixos
+
+            Default credentials (installed system):
+              user: theme
+              pass: nixos
+              ssh:  ssh -p 2222 theme@127.0.0.1
             """
         ),
         encoding="utf-8",
