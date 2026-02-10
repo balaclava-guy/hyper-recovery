@@ -4,6 +4,12 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+host_os="$(uname -s)"
+host_arch="$(uname -m)"
+if [[ "$host_os" == "Darwin" && "$host_arch" == "arm64" ]]; then
+  exec "$ROOT_DIR/scripts/theme-vm-darwin" "$@"
+fi
+
 usage() {
   cat <<'EOF'
 Usage:
