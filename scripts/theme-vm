@@ -197,7 +197,7 @@ def _write_cloud_init(seed_dir: Path) -> None:
                   if ! [[ "$hold_seconds" =~ ^[0-9]+$ ]]; then hold_seconds=8; fi
 
                   grub_timeout="$(cat "$mnt/GRUB_TIMEOUT" 2>/dev/null || echo 15)"
-                  if ! [[ "$grub_timeout" =~ ^[0-9]+$ ]]; then grub_timeout=15; fi
+                  if ! [[ "$grub_timeout" =~ ^-?[0-9]+$ ]]; then grub_timeout=15; fi
 
                   new_sha="$(
                     (
