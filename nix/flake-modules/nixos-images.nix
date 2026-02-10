@@ -37,12 +37,12 @@
           self.nixosModules.boot-branding
           self.nixosModules.services
           
-          # Image packaging
-          (import ../../packaging.nix { inherit inputs; }).images
-          
-          # ISO image configuration (from old packaging.nix structure)
-          self.nixosModules.image-usb-live
+          # Image infrastructure from nixpkgs
+          "${inputs.nixpkgs}/nixos/modules/image/images.nix"
           "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
+          
+          # ISO image configuration
+          self.nixosModules.image-usb-live
         ];
 
         # Debug USB Live Image (Regular + debug overlay)
@@ -59,12 +59,12 @@
           # Debug enhancements
           self.nixosModules.debug-overlay
           
-          # Image packaging
-          (import ../../packaging.nix { inherit inputs; }).images
+          # Image infrastructure from nixpkgs
+          "${inputs.nixpkgs}/nixos/modules/image/images.nix"
+          "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
           
           # Debug ISO configuration
           self.nixosModules.image-usb-live-debug
-          "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
         ];
 
       in
