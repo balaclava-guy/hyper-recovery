@@ -1,89 +1,487 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env python3
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT_DIR"
+from __future__ import annotations
 
-host_os="$(uname -s)"
-host_arch="$(uname -m)"
-if [[ "$host_os" == "Darwin" && "$host_arch" == "arm64" ]]; then
-  exec "$ROOT_DIR/scripts/theme-vm-darwin" "$@"
-fi
+import argparse
+import hashlib
+import os
+import platform
+import shutil
+import subprocess
+import sys
+import textwrap
+import time
+import urllib.request
+from pathlib import Path
 
-usage() {
-  cat <<'EOF'
-Usage:
-  scripts/theme-vm [--efi] [--serial SERIAL_LOG] [--no-build] [--]
 
-Builds the minimal theme ISO (x86_64-linux) and boots it in QEMU on macOS.
+def _which(p: str) -> str | None:
+    return shutil.which(p)
 
-Options:
-  --efi                 Boot with OVMF (UEFI) if available; otherwise falls back to BIOS.
-  --serial PATH         Write guest serial output to PATH (default: disabled).
-  --no-build            Skip nix build step; reuse ./result-theme-iso if present.
-EOF
-}
 
-BOOT_MODE="bios"
-SERIAL_LOG=""
-DO_BUILD=1
+def _run(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(cmd, check=check, text=True)
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --efi) BOOT_MODE="efi"; shift ;;
-    --serial) SERIAL_LOG="${2:-}"; shift 2 ;;
-    --no-build) DO_BUILD=0; shift ;;
-    -h|--help) usage; exit 0 ;;
-    --) shift; break ;;
-    *) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
-  esac
-done
 
-OUT_LINK="$ROOT_DIR/result-theme-iso"
-if [[ "$DO_BUILD" -eq 1 ]]; then
-  nix build -L ".#packages.x86_64-linux.theme-iso" -o "$OUT_LINK"
-fi
+def _sha256_file(p: Path) -> str:
+    h = hashlib.sha256()
+    with p.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
-shopt -s nullglob
-isos=("$OUT_LINK"/iso/*.iso)
-if [[ "${#isos[@]}" -eq 0 ]]; then
-  echo "No ISO found under $OUT_LINK/iso" >&2
-  ls -lah "$OUT_LINK" >&2 || true
-  exit 1
-fi
-ISO="${isos[0]}"
 
-qemu_args=(
-  -machine q35
-  -accel tcg,thread=multi
-  -cpu qemu64
-  -m 2048
-  -smp 2
-  -boot d
-  -cdrom "$ISO"
-  -vga virtio
-  -usb -device usb-kbd -device usb-mouse
-)
+def _download(url: str, dest: Path) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_suffix(dest.suffix + ".tmp")
+    req = urllib.request.Request(url, headers={"User-Agent": "hyper-theme-vm/1.0"})
+    with urllib.request.urlopen(req) as r, tmp.open("wb") as f:
+        total = r.headers.get("Content-Length")
+        total_i = int(total) if total and total.isdigit() else None
+        done = 0
+        last = time.time()
+        while True:
+            buf = r.read(1024 * 1024)
+            if not buf:
+                break
+            f.write(buf)
+            done += len(buf)
+            now = time.time()
+            if total_i and now - last > 0.5:
+                pct = (done / total_i) * 100.0
+                sys.stderr.write(f"\rDownloading base image: {pct:5.1f}%")
+                sys.stderr.flush()
+                last = now
+    if total_i:
+        sys.stderr.write("\rDownloading base image: 100.0%\n")
+    tmp.replace(dest)
 
-if [[ -n "$SERIAL_LOG" ]]; then
-  qemu_args+=(-serial "file:$SERIAL_LOG")
-fi
 
-if [[ "$BOOT_MODE" == "efi" ]]; then
-  # Best-effort: try to locate OVMF from nixpkgs on macOS. If it doesn't exist,
-  # just boot BIOS (GRUB theme is the same either way).
-  set +e
-  ovmf_out="$(nix build --no-link --print-out-paths nixpkgs#OVMF 2>/dev/null | tail -n 1)"
-  set -e
-  if [[ -n "${ovmf_out:-}" ]] && [[ -f "$ovmf_out/FV/OVMF.fd" ]]; then
-    qemu_args+=(-bios "$ovmf_out/FV/OVMF.fd")
-  else
-    echo "OVMF not available via nixpkgs#OVMF; falling back to BIOS boot." >&2
-  fi
-fi
+def _find_firmware(search_roots: list[Path]) -> tuple[Path, Path] | None:
+    # Common AArch64 UEFI firmware naming patterns.
+    code_patterns = [
+        "edk2-aarch64-code.fd",
+        "QEMU_EFI.fd",
+        "QEMU_EFI_CODE.fd",
+        "AAVMF_CODE.fd",
+    ]
+    vars_patterns = [
+        "edk2-aarch64-vars.fd",
+        "QEMU_EFI_VARS.fd",
+        "AAVMF_VARS.fd",
+    ]
+    loose_code = ("aarch64", "code", ".fd")
+    loose_vars = ("aarch64", "vars", ".fd")
 
-if command -v qemu-system-x86_64 >/dev/null 2>&1; then
-  exec qemu-system-x86_64 "${qemu_args[@]}"
-fi
+    def walk_find(patterns: list[str], loose: tuple[str, str, str]) -> Path | None:
+        for root in search_roots:
+            if not root.exists():
+                continue
+            for name in patterns:
+                p = root / name
+                if p.is_file():
+                    return p
+            max_files = 20000
+            seen = 0
+            for dirpath, _, filenames in os.walk(root):
+                for fn in filenames:
+                    seen += 1
+                    if seen > max_files:
+                        break
+                    lf = fn.lower()
+                    if loose[0] in lf and loose[1] in lf and lf.endswith(loose[2]):
+                        p = Path(dirpath) / fn
+                        if p.is_file():
+                            return p
+                if seen > max_files:
+                    break
+        return None
 
-exec nix shell nixpkgs#qemu --command qemu-system-x86_64 "${qemu_args[@]}"
+    code = walk_find(code_patterns, loose_code)
+    vars_ = walk_find(vars_patterns, loose_vars)
+    if code and vars_:
+        return (code, vars_)
+    return None
+
+
+def _make_cloud_init_seed_iso(xorriso: str, seed_dir: Path, out_iso: Path) -> None:
+    out_iso.parent.mkdir(parents=True, exist_ok=True)
+    if out_iso.exists():
+        out_iso.unlink()
+    _run(
+        [
+            xorriso,
+            "-as",
+            "mkisofs",
+            "-V",
+            "cidata",
+            "-o",
+            str(out_iso),
+            "-J",
+            "-r",
+            str(seed_dir),
+        ]
+    )
+
+
+def _write_cloud_init(seed_dir: Path) -> None:
+    seed_dir.mkdir(parents=True, exist_ok=True)
+    (seed_dir / "meta-data").write_text(
+        textwrap.dedent(
+            """\
+            instance-id: hyper-theme-vm
+            local-hostname: hyper-theme-vm
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    (seed_dir / "user-data").write_text(
+        textwrap.dedent(
+            """\
+            #cloud-config
+            ssh_pwauth: true
+            disable_root: false
+            users:
+              - name: theme
+                groups: [sudo]
+                sudo: ALL=(ALL) NOPASSWD:ALL
+                shell: /bin/bash
+                lock_passwd: false
+            chpasswd:
+              expire: false
+              list: |
+                theme:theme
+
+            write_files:
+              - path: /usr/local/sbin/hyper-theme-sync
+                permissions: '0755'
+                content: |
+                  #!/usr/bin/env bash
+                  set -euo pipefail
+
+                  state_dir=/var/lib/hyper-theme-sync
+                  mkdir -p "$state_dir"
+                  stamp="$state_dir/last.sha256"
+
+                  find_theme_dev() {
+                    while IFS= read -r dev; do
+                      mnt="$(mktemp -d)"
+                      if mount -t vfat -o ro "$dev" "$mnt" 2>/dev/null; then
+                        if [[ -f "$mnt/THEME_SYNC_MARKER" ]]; then
+                          echo "$dev"
+                          umount "$mnt" || true
+                          rmdir "$mnt" || true
+                          return 0
+                        fi
+                        umount "$mnt" || true
+                      fi
+                      rmdir "$mnt" || true
+                    done < <(lsblk -pnro NAME,FSTYPE,TYPE | awk '$2=="vfat"{print $1}')
+                    return 1
+                  }
+
+                  dev="$(find_theme_dev || true)"
+                  if [[ -z "${dev:-}" ]]; then
+                    echo "hyper-theme-sync: no theme drive found; skipping" >&2
+                    exit 0
+                  fi
+
+                  mnt=/mnt/hyper-theme
+                  mkdir -p "$mnt"
+                  mount -t vfat -o ro "$dev" "$mnt"
+                  trap 'umount "$mnt" 2>/dev/null || true' EXIT
+
+                  new_sha="$(
+                    (cd "$mnt" && \
+                      find themes/grub/hyper-recovery themes/plymouth/hyper-recovery assets/fonts/undefined-medium -type f -print0 \
+                      | LC_ALL=C sort -z \
+                      | xargs -0 sha256sum \
+                      | sha256sum \
+                      | awk '{print $1}')
+                  )"
+
+                  old_sha="$(cat "$stamp" 2>/dev/null || true)"
+                  if [[ -n "$old_sha" && "$old_sha" == "$new_sha" ]]; then
+                    echo "hyper-theme-sync: no changes" >&2
+                    exit 0
+                  fi
+
+                  echo "hyper-theme-sync: applying theme update..." >&2
+
+                  if ! command -v grub-mkfont >/dev/null 2>&1 || \
+                     ! command -v update-grub >/dev/null 2>&1 || \
+                     ! command -v plymouth-set-default-theme >/dev/null 2>&1; then
+                    export DEBIAN_FRONTEND=noninteractive
+                    apt-get update -y
+                    apt-get install -y grub-efi-arm64 grub-common plymouth plymouth-themes
+                  fi
+
+                  grub_theme_dir=/boot/grub/themes/snosu-hyper-recovery
+                  rm -rf "$grub_theme_dir"
+                  mkdir -p "$grub_theme_dir"
+                  cp -R "$mnt/themes/grub/hyper-recovery/"* "$grub_theme_dir/"
+
+                  font_src="$mnt/assets/fonts/undefined-medium/undefined-medium.ttf"
+                  grub-mkfont -s 12 -o "$grub_theme_dir/undefined_medium_12.pf2" "$font_src"
+                  grub-mkfont -s 14 -o "$grub_theme_dir/undefined_medium_14.pf2" "$font_src"
+                  grub-mkfont -s 16 -o "$grub_theme_dir/undefined_medium_16.pf2" "$font_src"
+                  grub-mkfont -s 24 -o "$grub_theme_dir/undefined_medium_24.pf2" "$font_src"
+                  grub-mkfont -s 28 -o "$grub_theme_dir/undefined_medium_28.pf2" "$font_src"
+
+                  sed -i 's/Hyper Street Fighter 2 Regular/Undefined Medium/g' "$grub_theme_dir/theme.txt" || true
+                  sed -i 's/Hyper Fighting Regular/Undefined Medium/g' "$grub_theme_dir/theme.txt" || true
+
+                  grub_defaults=/etc/default/grub
+                  if ! grep -q '^GRUB_TIMEOUT_STYLE=' "$grub_defaults" 2>/dev/null; then
+                    echo 'GRUB_TIMEOUT_STYLE=menu' >> "$grub_defaults"
+                  else
+                    sed -i 's/^GRUB_TIMEOUT_STYLE=.*/GRUB_TIMEOUT_STYLE=menu/' "$grub_defaults"
+                  fi
+                  if ! grep -q '^GRUB_TIMEOUT=' "$grub_defaults" 2>/dev/null; then
+                    echo 'GRUB_TIMEOUT=10' >> "$grub_defaults"
+                  else
+                    sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=10/' "$grub_defaults"
+                  fi
+                  if grep -q '^GRUB_THEME=' "$grub_defaults" 2>/dev/null; then
+                    sed -i "s|^GRUB_THEME=.*|GRUB_THEME=${grub_theme_dir}/theme.txt|" "$grub_defaults"
+                  else
+                    echo "GRUB_THEME=${grub_theme_dir}/theme.txt" >> "$grub_defaults"
+                  fi
+                  update-grub
+
+                  ply_theme_dir=/usr/share/plymouth/themes/snosu-hyper-recovery
+                  rm -rf "$ply_theme_dir"
+                  mkdir -p "$ply_theme_dir"
+                  cp -R "$mnt/themes/plymouth/hyper-recovery/"* "$ply_theme_dir/"
+                  cp "$font_src" "$ply_theme_dir/undefined-medium.ttf" || true
+
+                  if [[ -f "$ply_theme_dir/snosu-hyper-recovery.plymouth" ]]; then
+                    sed -i "s|^ImageDir=.*|ImageDir=${ply_theme_dir}|" "$ply_theme_dir/snosu-hyper-recovery.plymouth" || true
+                  fi
+                  plymouth-set-default-theme -R snosu-hyper-recovery || true
+
+                  echo "$new_sha" > "$stamp"
+                  sync || true
+
+                  echo "hyper-theme-sync: done; rebooting to show Plymouth theme..." >&2
+                  systemctl reboot
+
+              - path: /etc/systemd/system/hyper-theme-sync.service
+                permissions: '0644'
+                content: |
+                  [Unit]
+                  Description=Hyper theme sync (GRUB + Plymouth)
+                  After=network-online.target
+                  Wants=network-online.target
+
+                  [Service]
+                  Type=oneshot
+                  ExecStart=/usr/local/sbin/hyper-theme-sync
+
+                  [Install]
+                  WantedBy=multi-user.target
+
+            runcmd:
+              - [ systemctl, daemon-reload ]
+              - [ systemctl, enable, --now, hyper-theme-sync.service ]
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _host_is_darwin_arm64() -> bool:
+    return sys.platform == "darwin" and platform.machine() == "arm64"
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(
+        prog="theme-vm",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=textwrap.dedent(
+            """\
+            Minimal local theme preview VM.
+
+            On macOS arm64: boots an Ubuntu ARM64 cloud VM in QEMU+HVF, syncs this repo's
+            GRUB/Plymouth themes into it, and reboots once when changes are detected.
+            """
+        ),
+    )
+    p.add_argument("--fresh", action="store_true", help="Recreate overlay disk and seed ISO")
+    p.add_argument("--headless", action="store_true", help="Run QEMU with -nographic")
+    p.add_argument("--ssh", action="store_true", help="Print SSH command (localhost:2222)")
+    p.add_argument("--repo", default=".", help="Path to the hyper-recovery repo (defaults to current directory)")
+    p.add_argument("--cache-dir", default=os.environ.get("HYPER_THEME_VM_DIR", ""), help="Cache dir override")
+    p.add_argument(
+        "--base-image",
+        default=os.environ.get("HYPER_THEME_BASE_IMG", ""),
+        help="Path to a pre-downloaded Ubuntu ARM64 cloud image (skips download)",
+    )
+    p.add_argument(
+        "--ubuntu-url",
+        default=os.environ.get(
+            "UBUNTU_CLOUDIMG_URL",
+            "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-arm64.img",
+        ),
+        help="Ubuntu cloud image URL (arm64)",
+    )
+    args = p.parse_args()
+
+    if not _host_is_darwin_arm64():
+        sys.stderr.write("theme-vm currently supports macOS arm64 only.\n")
+        return 2
+
+    repo = Path(args.repo).resolve()
+    if not (repo / "themes/grub/hyper-recovery/theme.txt").is_file():
+        sys.stderr.write(f"Repo path does not look like hyper-recovery: {repo}\n")
+        sys.stderr.write("Expected to find: themes/grub/hyper-recovery/theme.txt\n")
+        return 2
+
+    cache_dir = Path(args.cache_dir) if args.cache_dir else Path.home() / ".cache" / "hyper-theme-vm"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    os.environ.setdefault("XDG_CACHE_HOME", str(cache_dir / "xdg-cache"))
+    Path(os.environ["XDG_CACHE_HOME"]).mkdir(parents=True, exist_ok=True)
+
+    share_dir = cache_dir / "share"
+    seed_dir = cache_dir / "seed"
+    seed_iso = cache_dir / "seed.iso"
+    base_img = cache_dir / "ubuntu-base.img"
+    overlay_img = cache_dir / "ubuntu-overlay.qcow2"
+    uefi_vars = cache_dir / "uefi-vars.fd"
+
+    # These tokens are replaced by Nix in the flake package.
+    qemu_system = os.environ.get("QEMU_SYSTEM_AARCH64", "@qemu_system_aarch64@")
+    qemu_img = os.environ.get("QEMU_IMG", "@qemu_img@")
+    xorriso = os.environ.get("XORRISO", "@xorriso@")
+    firmware_roots_raw = os.environ.get("FIRMWARE_SEARCH_DIRS", "@firmware_search_dirs@")
+
+    # If the flake didn't substitute these tokens (or you're running the repo script
+    # directly), fall back to PATH lookup.
+    if qemu_system.startswith("@"):
+        qemu_system = _which("qemu-system-aarch64") or ""
+    if qemu_img.startswith("@"):
+        qemu_img = _which("qemu-img") or ""
+    if xorriso.startswith("@"):
+        xorriso = _which("xorriso") or ""
+    if firmware_roots_raw.startswith("@"):
+        firmware_roots_raw = ""
+
+    if not qemu_system:
+        sys.stderr.write("Missing qemu-system-aarch64 in PATH (or QEMU_SYSTEM_AARCH64 not set).\n")
+        return 1
+    if not qemu_img:
+        sys.stderr.write("Missing qemu-img in PATH (or QEMU_IMG not set).\n")
+        return 1
+    if not xorriso:
+        sys.stderr.write("Missing xorriso in PATH (or XORRISO not set).\n")
+        return 1
+
+    firmware_search_dirs: list[Path] = []
+    if firmware_roots_raw and "@firmware_search_dirs@" not in firmware_roots_raw:
+        for part in firmware_roots_raw.split(":"):
+            if part.strip():
+                firmware_search_dirs.append(Path(part.strip()))
+
+    qemu_share = Path(qemu_system).resolve().parent.parent / "share" / "qemu"
+    firmware_search_dirs.append(qemu_share)
+    firmware_search_dirs.append(Path("/opt/homebrew/share/qemu"))
+
+    if args.ssh:
+        sys.stderr.write(
+            "SSH (after first boot): ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 theme@127.0.0.1\n"
+        )
+
+    if args.fresh:
+        for pth in (overlay_img, seed_iso, uefi_vars):
+            if pth.exists():
+                pth.unlink()
+
+    if args.base_image:
+        src = Path(args.base_image).expanduser().resolve()
+        if not src.is_file():
+            sys.stderr.write(f"--base-image does not exist: {src}\n")
+            return 2
+        if not base_img.exists() or _sha256_file(base_img) != _sha256_file(src):
+            shutil.copy2(src, base_img)
+    elif not base_img.exists():
+        sys.stderr.write(f"Downloading Ubuntu cloud image: {args.ubuntu_url}\n")
+        _download(args.ubuntu_url, base_img)
+
+    if share_dir.exists():
+        shutil.rmtree(share_dir)
+    (share_dir / "themes/grub").mkdir(parents=True, exist_ok=True)
+    (share_dir / "themes/plymouth").mkdir(parents=True, exist_ok=True)
+    (share_dir / "assets/fonts/undefined-medium").mkdir(parents=True, exist_ok=True)
+    (share_dir / "THEME_SYNC_MARKER").write_text("hyper-theme-sync\n", encoding="utf-8")
+
+    shutil.copytree(repo / "themes/grub/hyper-recovery", share_dir / "themes/grub/hyper-recovery")
+    shutil.copytree(repo / "themes/plymouth/hyper-recovery", share_dir / "themes/plymouth/hyper-recovery")
+    shutil.copy2(
+        repo / "assets/fonts/undefined-medium/undefined-medium.ttf",
+        share_dir / "assets/fonts/undefined-medium/undefined-medium.ttf",
+    )
+
+    _write_cloud_init(seed_dir)
+    _make_cloud_init_seed_iso(xorriso, seed_dir, seed_iso)
+
+    efi_code_env = os.environ.get("HYPER_THEME_EFI_CODE", "")
+    efi_vars_env = os.environ.get("HYPER_THEME_EFI_VARS", "")
+    if efi_code_env and efi_vars_env:
+        efi_code = Path(efi_code_env)
+        efi_vars_src = Path(efi_vars_env)
+        if not efi_code.is_file() or not efi_vars_src.is_file():
+            sys.stderr.write("HYPER_THEME_EFI_CODE/HYPER_THEME_EFI_VARS were set but files do not exist.\n")
+            return 1
+    else:
+        fw = _find_firmware(firmware_search_dirs)
+        if not fw:
+            sys.stderr.write(
+                "Failed to locate AArch64 UEFI firmware (.fd). Provide HYPER_THEME_EFI_CODE and HYPER_THEME_EFI_VARS, or install QEMU/EDK2.\n"
+            )
+            return 1
+        efi_code, efi_vars_src = fw
+
+    if not uefi_vars.exists():
+        shutil.copy2(efi_vars_src, uefi_vars)
+
+    if not overlay_img.exists():
+        _run([qemu_img, "create", "-f", "qcow2", "-F", "qcow2", "-b", str(base_img), str(overlay_img)])
+
+    qemu_args = [
+        qemu_system,
+        "-machine",
+        "virt,accel=hvf,highmem=off",
+        "-cpu",
+        "host",
+        "-m",
+        "2048",
+        "-smp",
+        "2",
+        "-device",
+        "virtio-gpu-pci",
+        "-netdev",
+        "user,id=net0,hostfwd=tcp:127.0.0.1:2222-:22",
+        "-device",
+        "virtio-net-pci,netdev=net0",
+        "-drive",
+        f"if=pflash,format=raw,readonly=on,file={efi_code}",
+        "-drive",
+        f"if=pflash,format=raw,file={uefi_vars}",
+        "-drive",
+        f"if=virtio,format=qcow2,file={overlay_img}",
+        "-drive",
+        f"if=virtio,format=raw,media=cdrom,file={seed_iso}",
+        "-drive",
+        f"if=virtio,format=raw,file=fat:rw:{share_dir}",
+    ]
+    if args.headless:
+        qemu_args.append("-nographic")
+
+    os.execv(qemu_system, qemu_args)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

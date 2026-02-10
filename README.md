@@ -128,6 +128,17 @@ The system includes a custom Plymouth theme. If it doesn't display:
 2. Check that your GPU supports KMS (Kernel Mode Setting)
 3. Drivers included: i915 (Intel), amdgpu (AMD), nouveau (NVIDIA), radeon (old AMD)
 
+## Theme Preview VM (macOS arm64)
+
+For quick local iteration on the GRUB and Plymouth themes (without building the full ISO), run:
+
+```bash
+nix run .#theme-vm
+```
+
+This boots an Ubuntu ARM64 cloud VM in QEMU+HVF, syncs the themes from this repo into the VM,
+and reboots once when changes are detected so you can see Plymouth.
+
 ### Boot Issues
 
 - **BIOS mode not working**: Ensure the USB is bootable in legacy mode in BIOS settings
