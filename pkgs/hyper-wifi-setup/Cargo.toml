@@ -20,8 +20,12 @@ zvariant = "4"
 # Web server + Leptos
 axum = { version = "0.7", features = ["tokio"] }
 axum-extra = { version = "0.9", features = ["typed-header"] }
-leptos = { version = "0.6", features = ["ssr"] }
-leptos_axum = "0.6"
+leptos = { version = "0.8", features = ["ssr"] }
+leptos-shadcn-alert = { path = "../../leptos-shadcn-ui/packages/leptos/alert" }
+leptos-shadcn-badge = { path = "../../leptos-shadcn-ui/packages/leptos/badge" }
+leptos-shadcn-button = { path = "../../leptos-shadcn-ui/packages/leptos/button" }
+leptos-shadcn-card = { path = "../../leptos-shadcn-ui/packages/leptos/card" }
+leptos-shadcn-input = { path = "../../leptos-shadcn-ui/packages/leptos/input" }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["fs", "trace"] }
 

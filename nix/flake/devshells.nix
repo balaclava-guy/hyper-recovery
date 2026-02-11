@@ -13,7 +13,13 @@
         p7zip
         nixpkgs-fmt
         statix
+        cargo
+        rustc
+        pkg-config
+        openssl
       ] ++ lib.optionals (system == "aarch64-darwin") [
+        clang
+        libiconv
         python3
         qemu
         mtools
@@ -81,6 +87,11 @@
         {
           name = "HYPER_RECOVERY_ROOT";
           eval = "$PRJ_ROOT";
+        }
+      ] ++ lib.optionals pkgs.stdenv.isDarwin [
+        {
+          name = "LIBRARY_PATH";
+          value = "${pkgs.libiconv}/lib";
         }
       ];
       
