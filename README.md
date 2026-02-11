@@ -1,7 +1,7 @@
 # Super NixOS Utilities: Hyper Recovery
 
 <p align="center">
-  <img src="./super-nixos-utils-hyper-recovery-logo.png" alt="Super NixOS Utilities Hyper Recovery Logo">
+  <img src="./assets/branding/logo/super-nixos-utils-hyper-recovery-logo.png" alt="Super NixOS Utilities Hyper Recovery Logo">
 </p>
 
 This repository contains a Nix Flake to generate a portable hypervisor USB system based on NixOS.
