@@ -420,7 +420,7 @@ jobs:
               local fail_reason=""
 
               # Safety watchdog for catastrophic VM hangs.
-              local watchdog_seconds=900
+              local watchdog_seconds=420
               local deadline=$((SECONDS + watchdog_seconds))
 
               echo "Waiting for hyper-ci-debug signals (event-driven)..."
@@ -447,7 +447,7 @@ jobs:
                     break
                   fi
 
-                  if grep -qE "hyper-ci-debug: shared-folder mount failed|Failed to mount shared folder|Could not mount shared folder|hyper-ci-debug\\.service: Failed|hyper-ci-debug\\.service: Main process exited, code=exited, status=[1-9]" "$serial_log"; then
+                  if grep -qE "hyper-ci-debug: shared-folder mount failed|Failed to mount shared folder|Could not mount shared folder|hyper-ci-debug\\.service: Failed with result|hyper-ci-debug\\.service: Main process exited, code=exited, status=[1-9]" "$serial_log"; then
                     fail_reason="Detected hyper-ci-debug failure in serial log"
                     break
                   fi
