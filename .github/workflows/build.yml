@@ -532,17 +532,8 @@ jobs:
 
   preview-vm:
     name: Preview VM
-    needs: resolve-options
-    if: |
-      needs.resolve-options.outputs.run_preview == 'true' &&
-      (
-        github.event_name == 'workflow_dispatch' ||
-        (
-          github.event_name == 'check_suite' &&
-          github.event.check_suite.app.slug == 'garnix-ci' &&
-          github.event.check_suite.conclusion == 'success'
-        )
-      )
+    needs: [resolve-options, fetch-artifacts]
+    if: needs.resolve-options.outputs.run_preview == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -559,69 +550,53 @@ jobs:
         with:
           ref: ${{ needs.resolve-options.outputs.ref }}
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@v27
-        with:
-          extra_nix_config: |
-            substituters = https://cache.nixos.org https://cache.garnix.io
-            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=
-
-      - name: Install QEMU + noVNC + cloudflared
+      - name: Install system dependencies
         run: |
-          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 qemu-utils ovmf novnc websockify curl lsof zstd
+          sudo apt-get install -y qemu-system-x86 qemu-utils ovmf novnc websockify curl lsof p7zip-full
 
-          CLOUDFLARED_DEB="cloudflared-linux-amd64.deb"
-          curl -fsSL -o "$CLOUDFLARED_DEB" https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-          sudo dpkg -i "$CLOUDFLARED_DEB" || sudo apt-get install -f -y
-          cloudflared --version
+      - name: Download live ISO artifact
+        if: ${{ needs.resolve-options.outputs.preview_debug != 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: live-iso
+          path: dist
 
-      - name: Fetch/Build ISO (uses Garnix cache when available)
+      - name: Download debug ISO artifact
+        if: ${{ needs.resolve-options.outputs.preview_debug == 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: debug-iso
+          path: dist
+
+      - name: Extract ISO
         run: |
           set -euo pipefail
-          if [ "${{ needs.resolve-options.outputs.preview_debug }}" == "true" ]; then
-            PKG="usb-debug"
-            echo "Fetching/building DEBUG image..."
-          else
-            PKG="usb"
-            echo "Fetching/building STANDARD image..."
+
+          # Extract the .7z archive
+          if ls dist/*.7z >/dev/null 2>&1; then
+            ARCHIVE=$(ls dist/*.7z | head -1)
+            7z x "$ARCHIVE" -odist/ >/dev/null
+            rm "$ARCHIVE"
           fi
 
-          echo "::notice::Will fetch from Garnix cache if this commit was already built, otherwise will build from scratch (15-30 min)"
-
-          # Try to fetch from cache first with max-jobs=0 (no local building)
-          if nix build --accept-flake-config .#$PKG --out-link result-iso --max-jobs 0 --refresh 2>/dev/null; then
-            echo "::notice::✅ Successfully fetched from Garnix cache (no build needed)"
-          else
-            echo "::warning::Cache miss - building from scratch (this may take 15-30 minutes)"
-            echo "::warning::Consider waiting for Garnix to build this commit first"
-            # Now build with normal settings (allows local building)
-            nix build --accept-flake-config .#$PKG --out-link result-iso --print-build-logs --refresh
-          fi
-
-          # Our ISO derivation outputs to $out/iso/<name>.iso (or <name>.iso.zst if compressImage is enabled).
-          ISO_PATH=""
-          ISO_ZST_PATH=""
-          if [ -e result-iso ]; then
-            ISO_PATH="$(find -L result-iso -maxdepth 4 -type f -name '*.iso' | head -1 || true)"
-            ISO_ZST_PATH="$(find -L result-iso -maxdepth 4 -type f -name '*.iso.zst' | head -1 || true)"
-          fi
-
-          if [ -z "$ISO_PATH" ] && [ -n "$ISO_ZST_PATH" ]; then
-            echo "::notice::Found compressed ISO ($ISO_ZST_PATH); decompressing for QEMU..."
-            ISO_PATH="/tmp/preview.iso"
-            zstd -d -f -o "$ISO_PATH" "$ISO_ZST_PATH"
-          fi
+          # Find the ISO file
+          ISO_PATH=$(find dist -type f -name '*.iso' | head -1)
 
           if [ -z "$ISO_PATH" ]; then
-            echo "::error::Could not locate ISO under result-iso (expected result-iso/iso/*.iso)" >&2
-            echo "Contents of result-iso:" >&2
-            find -L result-iso -maxdepth 4 -print >&2 || true
+            echo "::error::Could not find ISO file in artifact"
             exit 1
           fi
 
           echo "ISO_PATH=$ISO_PATH" >> $GITHUB_ENV
+          echo "::notice::Using ISO: $ISO_PATH"
+
+      - name: Install cloudflared
+        run: |
+          CLOUDFLARED_DEB="cloudflared-linux-amd64.deb"
+          curl -fsSL -o "$CLOUDFLARED_DEB" https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i "$CLOUDFLARED_DEB" || sudo apt-get install -f -y
+          cloudflared --version
 
       - name: Start preview VM with VNC + noVNC + tunnel
         env:
