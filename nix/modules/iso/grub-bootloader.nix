@@ -33,7 +33,7 @@ let
     }
   '';
 
-  buildMenuGrub2 = { cfg ? config, params ? [] }:
+  buildMenuGrub2 = { cfg ? config, params ? [], showMainEntry ? true }:
     let
       menuConfig = {
         name = lib.concatStrings [
@@ -51,11 +51,11 @@ let
       };
     in
     ''
-      ${lib.optionalString cfg.isoImage.showConfiguration (menuBuilderGrub2 menuConfig)}
+      ${lib.optionalString (showMainEntry && cfg.isoImage.showConfiguration) (menuBuilderGrub2 menuConfig)}
       ${lib.concatStringsSep "\n" (
         lib.mapAttrsToList (
           specName: { configuration, ... }:
-          buildMenuGrub2 { cfg = configuration; inherit params; }
+          buildMenuGrub2 { cfg = configuration; inherit params; inherit showMainEntry; }
         ) cfg.specialisation
       )}
     '';
