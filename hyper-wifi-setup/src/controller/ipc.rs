@@ -1,6 +1,7 @@
 //! IPC server for TUI client communication
 
-use super::{AppState, ControlCommand, WifiStateSnapshot};
+use super::{AppState, ControlCommand};
+use super::state::WifiStateSnapshot;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

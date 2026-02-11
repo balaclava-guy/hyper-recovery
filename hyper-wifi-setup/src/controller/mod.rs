@@ -2,10 +2,10 @@
 
 mod network_manager;
 mod ap_manager;
-mod state;
-mod ipc;
+pub mod state;
+pub mod ipc;
 
-pub use state::{WifiState, NetworkInfo, ConnectionStatus};
+pub use state::{WifiState, NetworkInfo, ConnectionStatus, WifiStateSnapshot};
 pub use ipc::{IpcRequest, IpcResponse};
 
 use std::sync::Arc;
