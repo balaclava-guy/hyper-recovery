@@ -76,6 +76,8 @@ in
         ExecStart = "${hyper-wifi-setup}/bin/hyper-wifi-setup daemon --interface ${cfg.interface} --ssid ${cfg.ssid} --ap-ip ${cfg.apIp} --port ${toString cfg.port} --grace-period ${toString cfg.gracePeriod}";
         Restart = "on-failure";
         RestartSec = "5s";
+        RuntimeDirectory = "hyper-wifi-setup";
+        RuntimeDirectoryMode = "0755";
 
         # Security hardening (limited due to network requirements)
         NoNewPrivileges = false;  # Needs to spawn hostapd/dnsmasq
@@ -107,12 +109,9 @@ in
       wants = [ "hyper-wifi-setup.service" ];
       wantedBy = [ "multi-user.target" ];
 
-      unitConfig = {
-        ConditionPathExists = "/run/hyper-wifi-setup.sock";
-      };
-
       serviceConfig = {
         Type = "simple";
+        ExecStartPre = "${pkgs.bash}/bin/bash -lc 'for i in {1..60}; do [ -S /run/hyper-wifi-setup.sock ] && exit 0; sleep 1; done; echo IPC socket not ready >&2; exit 1'";
         ExecStart = "${hyper-wifi-setup}/bin/hyper-wifi-setup tui";
         Restart = "on-failure";
         RestartSec = "2s";

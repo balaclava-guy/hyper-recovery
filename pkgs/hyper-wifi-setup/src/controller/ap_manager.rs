@@ -1,9 +1,9 @@
 //! Access Point management using hostapd and dnsmasq
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use std::process::Stdio;
 use tokio::process::{Child, Command};
-use tokio::sync::{OnceCell, Mutex};
+use tokio::sync::{Mutex, OnceCell};
 
 // Global handles for cleanup
 static HOSTAPD_HANDLE: OnceCell<Mutex<Option<Child>>> = OnceCell::const_new();
@@ -69,17 +69,24 @@ wpa=0
         .await
         .context("Failed to write hostapd config")?;
 
+    let runtime_dir = "/run/hyper-wifi-setup";
+    tokio::fs::create_dir_all(runtime_dir)
+        .await
+        .context("Failed to create runtime directory")?;
+
     // Create dnsmasq config
     let dnsmasq_conf = format!(
         r#"interface={}
 listen-address={}
 bind-interfaces
+dhcp-leasefile={}/dnsmasq.leases
+pid-file={}/dnsmasq.pid
 dhcp-range=192.168.42.10,192.168.42.250,255.255.255.0,12h
 dhcp-option=option:router,{}
 dhcp-option=option:dns-server,{}
 address=/#/{}
 "#,
-        interface, ap_ip, ap_ip, ap_ip, ap_ip
+        interface, ap_ip, runtime_dir, runtime_dir, ap_ip, ap_ip, ap_ip
     );
 
     let dnsmasq_conf_path = "/tmp/hyper-dnsmasq.conf";
@@ -89,7 +96,7 @@ address=/#/{}
 
     // Start hostapd
     tracing::info!("Starting hostapd");
-    let hostapd = Command::new("hostapd")
+    let mut hostapd = Command::new("hostapd")
         .arg("-d")
         .arg(hostapd_conf_path)
         .stdout(Stdio::null())
@@ -97,16 +104,27 @@ address=/#/{}
         .spawn()
         .context("Failed to start hostapd")?;
 
-    HOSTAPD_HANDLE
-        .get_or_init(|| async { Mutex::new(Some(hostapd)) })
-        .await;
-
     // Wait for hostapd to initialize
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
+    if let Some(status) = hostapd
+        .try_wait()
+        .context("Failed to check hostapd process")?
+    {
+        bail!("hostapd exited early with status: {}", status);
+    }
+
+    let hostapd_handle = HOSTAPD_HANDLE
+        .get_or_init(|| async { Mutex::new(None) })
+        .await;
+    {
+        let mut guard = hostapd_handle.lock().await;
+        *guard = Some(hostapd);
+    }
+
     // Start dnsmasq
     tracing::info!("Starting dnsmasq");
-    let dnsmasq = Command::new("dnsmasq")
+    let mut dnsmasq = Command::new("dnsmasq")
         .arg("--keep-in-foreground")
         .arg("--no-daemon")
         .arg(&format!("--conf-file={}", dnsmasq_conf_path))
@@ -115,9 +133,23 @@ address=/#/{}
         .spawn()
         .context("Failed to start dnsmasq")?;
 
-    DNSMASQ_HANDLE
-        .get_or_init(|| async { Mutex::new(Some(dnsmasq)) })
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    if let Some(status) = dnsmasq
+        .try_wait()
+        .context("Failed to check dnsmasq process")?
+    {
+        let _ = stop_ap().await;
+        bail!("dnsmasq exited early with status: {}", status);
+    }
+
+    let dnsmasq_handle = DNSMASQ_HANDLE
+        .get_or_init(|| async { Mutex::new(None) })
         .await;
+    {
+        let mut guard = dnsmasq_handle.lock().await;
+        *guard = Some(dnsmasq);
+    }
 
     tracing::info!("Access point started successfully");
     Ok(())
@@ -158,6 +190,8 @@ pub async fn stop_ap() -> Result<()> {
     // Clean up temp files
     let _ = tokio::fs::remove_file("/tmp/hyper-hostapd.conf").await;
     let _ = tokio::fs::remove_file("/tmp/hyper-dnsmasq.conf").await;
+    let _ = tokio::fs::remove_file("/run/hyper-wifi-setup/dnsmasq.leases").await;
+    let _ = tokio::fs::remove_file("/run/hyper-wifi-setup/dnsmasq.pid").await;
 
     tracing::info!("Access point stopped");
     Ok(())
