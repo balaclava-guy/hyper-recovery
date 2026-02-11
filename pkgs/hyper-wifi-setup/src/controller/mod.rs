@@ -4,8 +4,10 @@ mod network_manager;
 mod ap_manager;
 pub mod state;
 pub mod ipc;
+pub mod credentials;
 
 pub use state::{WifiState, NetworkInfo, ConnectionStatus, WifiStateSnapshot};
+pub use credentials::CredentialsStore;
 
 use std::sync::Arc;
 use tokio::sync::{watch, mpsc, RwLock};
@@ -34,7 +36,7 @@ pub struct AppState {
 #[derive(Debug, Clone)]
 pub enum ControlCommand {
     Scan,
-    Connect { ssid: String, password: String },
+    Connect { ssid: String, password: String, save: bool },
     Shutdown,
 }
 
@@ -82,8 +84,8 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
         return Ok(());
     }
 
-    // No connectivity - start AP and portal
-    tracing::info!("No network connectivity, starting AP and portal");
+    // No connectivity - scan and check for saved credentials
+    tracing::info!("No network connectivity, scanning for networks...");
 
     // Initial WiFi scan (before starting AP)
     {
@@ -93,6 +95,40 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
     }
 
     let networks = network_manager::scan_networks(&app_state.config.interface).await?;
+    
+    // Load saved credentials and check for known networks
+    let creds_store = credentials::CredentialsStore::load().unwrap_or_default();
+    
+    if let Some(known_network) = creds_store.best_known_network(&networks) {
+        if let Some(password) = creds_store.get_password(&known_network.ssid) {
+            tracing::info!(
+                ssid = %known_network.ssid,
+                signal = known_network.signal_strength,
+                "Found saved credentials for available network, attempting auto-connect"
+            );
+            
+            // Try to connect with saved credentials
+            match network_manager::connect_to_network(
+                &app_state.config.interface,
+                &known_network.ssid,
+                password,
+            ).await {
+                Ok(()) => {
+                    tracing::info!(ssid = %known_network.ssid, "Auto-connected using saved credentials");
+                    return Ok(());
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        ssid = %known_network.ssid,
+                        error = %e,
+                        "Auto-connect failed, will start AP"
+                    );
+                }
+            }
+        }
+    }
+
+    // Update state with scanned networks
     {
         let mut state = app_state.wifi_state.write().await;
         state.available_networks = networks;
@@ -100,6 +136,8 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
         state.last_scan = Some(std::time::Instant::now());
         let _ = app_state.state_tx.send(state.clone());
     }
+
+    tracing::info!("Starting AP and portal");
 
     // Start AP
     let _ap_handle = ap_manager::start_ap(
@@ -146,8 +184,8 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
                             // Would need to stop AP briefly for rescan
                             // For now, just log
                         }
-                        ControlCommand::Connect { ssid, password } => {
-                            tracing::info!(ssid = %ssid, "Connection requested");
+                        ControlCommand::Connect { ssid, password, save } => {
+                            tracing::info!(ssid = %ssid, save = save, "Connection requested");
                             
                             // Update state
                             {
@@ -170,6 +208,19 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
                             ).await {
                                 Ok(()) => {
                                     tracing::info!("Successfully connected to WiFi");
+                                    
+                                    // Save credentials if requested
+                                    if save {
+                                        let mut creds = credentials::CredentialsStore::load()
+                                            .unwrap_or_default();
+                                        creds.save_credential(&ssid, &password);
+                                        if let Err(e) = creds.save() {
+                                            tracing::warn!(error = %e, "Failed to save credentials");
+                                        } else {
+                                            tracing::info!(ssid = %ssid, "Saved WiFi credentials");
+                                        }
+                                    }
+                                    
                                     let mut state = ctrl_state.wifi_state.write().await;
                                     state.status = ConnectionStatus::Connected;
                                     state.connected_ssid = Some(ssid);

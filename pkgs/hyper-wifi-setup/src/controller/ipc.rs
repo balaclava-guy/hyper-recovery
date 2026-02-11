@@ -13,8 +13,12 @@ use tokio::net::{UnixListener, UnixStream};
 pub enum IpcRequest {
     GetStatus,
     Scan,
-    Connect { ssid: String, password: String },
+    Connect { ssid: String, password: String, #[serde(default = "default_save")] save: bool },
     Shutdown,
+}
+
+fn default_save() -> bool {
+    true // Default to saving credentials
 }
 
 /// IPC response to client
@@ -75,10 +79,10 @@ async fn handle_client(stream: UnixStream, state: Arc<AppState>) -> Result<()> {
                 let _ = state.command_tx.send(ControlCommand::Scan).await;
                 IpcResponse::Ok
             }
-            IpcRequest::Connect { ssid, password } => {
+            IpcRequest::Connect { ssid, password, save } => {
                 let _ = state
                     .command_tx
-                    .send(ControlCommand::Connect { ssid, password })
+                    .send(ControlCommand::Connect { ssid, password, save })
                     .await;
                 IpcResponse::Ok
             }
@@ -117,7 +121,7 @@ pub async fn get_status(socket_path: &str) -> Result<WifiStateSnapshot> {
 }
 
 /// Send connect command to daemon (client side)
-pub async fn send_connect(socket_path: &str, ssid: &str, password: &str) -> Result<()> {
+pub async fn send_connect(socket_path: &str, ssid: &str, password: &str, save: bool) -> Result<()> {
     let stream = UnixStream::connect(socket_path).await?;
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
@@ -125,6 +129,7 @@ pub async fn send_connect(socket_path: &str, ssid: &str, password: &str) -> Resu
     let request = IpcRequest::Connect {
         ssid: ssid.to_string(),
         password: password.to_string(),
+        save,
     };
     let json = serde_json::to_string(&request)? + "\n";
     writer.write_all(json.as_bytes()).await?;

@@ -27,6 +27,12 @@ pub async fn api_status(State(state): State<Arc<AppState>>) -> Json<WifiStateSna
 pub struct ConnectRequest {
     ssid: String,
     password: String,
+    #[serde(default = "default_save")]
+    save: bool,
+}
+
+fn default_save() -> bool {
+    true // Default to saving credentials
 }
 
 #[derive(Debug, Serialize)]
@@ -45,6 +51,7 @@ pub async fn api_connect(
         .send(ControlCommand::Connect {
             ssid: req.ssid.clone(),
             password: req.password,
+            save: req.save,
         })
         .await;
 
@@ -177,6 +184,12 @@ fn render_portal_page(state: &WifiStateSnapshot, _ap_ip: &str) -> String {
                     <input type="password" id="password-input" placeholder="Password" required minlength="8">
                     <button type="button" class="toggle-password" onclick="togglePassword()">👁️</button>
                 </div>
+                <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" id="save-password" checked>
+                        Remember password for auto-connect
+                    </label>
+                </div>
                 <div class="modal-actions">
                     <button type="button" class="btn-cancel" onclick="hideModal()">Cancel</button>
                     <button type="submit" class="btn-connect">Connect</button>
@@ -197,6 +210,12 @@ fn render_portal_page(state: &WifiStateSnapshot, _ap_ip: &str) -> String {
                     <input type="password" id="manual-password" placeholder="Password (leave empty for open)">
                     <button type="button" class="toggle-password" onclick="toggleManualPassword()">👁️</button>
                 </div>
+                <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" id="manual-save-password" checked>
+                        Remember password for auto-connect
+                    </label>
+                </div>
                 <div class="modal-actions">
                     <button type="button" class="btn-cancel" onclick="hideManualModal()">Cancel</button>
                     <button type="submit" class="btn-connect">Connect</button>
@@ -216,10 +235,11 @@ fn render_portal_page(state: &WifiStateSnapshot, _ap_ip: &str) -> String {
             if (secured) {{
                 document.getElementById('modal-ssid').textContent = ssid;
                 document.getElementById('password-input').value = '';
+                document.getElementById('save-password').checked = true;
                 document.getElementById('password-modal').classList.remove('hidden');
             }} else {{
-                // Connect to open network directly
-                connect(ssid, '');
+                // Connect to open network directly (no password to save)
+                connect(ssid, '', false);
             }}
         }}
 
@@ -250,7 +270,8 @@ fn render_portal_page(state: &WifiStateSnapshot, _ap_ip: &str) -> String {
         function submitConnect(e) {{
             e.preventDefault();
             const password = document.getElementById('password-input').value;
-            connect(selectedSsid, password);
+            const save = document.getElementById('save-password').checked;
+            connect(selectedSsid, password, save);
             hideModal();
         }}
 
@@ -258,18 +279,19 @@ fn render_portal_page(state: &WifiStateSnapshot, _ap_ip: &str) -> String {
             e.preventDefault();
             const ssid = document.getElementById('manual-ssid').value;
             const password = document.getElementById('manual-password').value;
-            connect(ssid, password);
+            const save = document.getElementById('manual-save-password').checked;
+            connect(ssid, password, save);
             hideManualModal();
         }}
 
-        async function connect(ssid, password) {{
+        async function connect(ssid, password, save = true) {{
             updateStatus('Connecting to ' + ssid + '...', 'status-connecting');
             
             try {{
                 const response = await fetch('/api/connect', {{
                     method: 'POST',
                     headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify({{ ssid, password }})
+                    body: JSON.stringify({{ ssid, password, save }})
                 }});
                 
                 const data = await response.json();

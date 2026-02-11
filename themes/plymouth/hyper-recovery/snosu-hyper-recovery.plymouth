@@ -2,7 +2,8 @@
 Name=SNOSU Hyper Recovery
 Description=Animated boot splash for SNOSU Hyper Recovery
 ModuleName=script
-ImageDir=themes/plymouth/hyper-recovery
+ImageDir=/run/current-system/sw/share/plymouth/themes/snosu-hyper-recovery
+ScriptFile=/run/current-system/sw/share/plymouth/themes/snosu-hyper-recovery/snosu-hyper-recovery.script
 
 [script]
-ScriptFile=snosu-hyper-recovery.script
+ScriptFile=/run/current-system/sw/share/plymouth/themes/snosu-hyper-recovery/snosu-hyper-recovery.script
