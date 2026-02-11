@@ -79,4 +79,22 @@ in
       umount
     ];
   };
+  
+  # CI-only: Automated debug collection for GitHub Actions
+  hyper-ci-debug = makePythonScript {
+    name = "hyper-ci-debug";
+    script = ../../../scripts/hyper-ci-debug.py;
+    runtimeInputs = with pkgs; [
+      coreutils
+      util-linux
+      systemd
+      plymouth
+      pciutils
+      iproute2
+      networkmanager
+      mount
+      umount
+      findutils
+    ];
+  };
 }

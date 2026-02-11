@@ -58,6 +58,7 @@ in
   environment.systemPackages = [
     scripts.hyper-debug-serial
     scripts.save-boot-logs
+    scripts.hyper-ci-debug
     # Note: hyper-debug and hyper-hw are already in base
   ];
 
@@ -108,5 +109,20 @@ in
       ${scripts.hyper-debug-serial}/bin/hyper-debug-serial
       echo "hyper-debug-serial: done"
     '';
+  };
+
+  # Collect CI debug info to well-known location
+  systemd.services.hyper-ci-debug = {
+    description = "Collect debug info for CI/automated testing";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "systemd-journald.service" "network-online.target" ];
+    wants = [ "network-online.target" ];
+    
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "${scripts.hyper-ci-debug}/bin/hyper-ci-debug";
+      # Allow longer timeout for comprehensive collection
+      TimeoutStartSec = "120s";
+    };
   };
 }

@@ -96,7 +96,7 @@ jobs:
             esac
           else
             # Commit-message flags for check_suite-driven runs:
-            # [debug], [preview], [preview-debug]
+            # [debug], [preview], [preview-debug], [ci-debug]
             if printf '%s' "$COMMIT_MESSAGE_LC" | grep -q '\[debug\]'; then
               include_debug=true
             fi
@@ -109,6 +109,11 @@ jobs:
               include_debug=true
               run_preview=true
               preview_debug=true
+            fi
+
+            # [ci-debug] is an alias for [debug] - enables debug artifacts + CI debug log extraction
+            if printf '%s' "$COMMIT_MESSAGE_LC" | grep -q '\[ci-debug\]'; then
+              include_debug=true
             fi
           fi
 
@@ -128,7 +133,7 @@ jobs:
               echo "- Dispatch mode: \`$MODE\`"
             else
               echo "- Trigger: \`check_suite\`"
-              echo "- Commit flags: \`[debug]\`, \`[preview]\`, \`[preview-debug]\`"
+              echo "- Commit flags: \`[debug]\`, \`[preview]\`, \`[preview-debug]\`, \`[ci-debug]\`"
             fi
             echo "- include_debug: \`$include_debug\`"
             echo "- run_preview: \`$run_preview\`"
@@ -294,10 +299,13 @@ jobs:
 
       - name: Boot ISO and capture visuals
         shell: bash
+        env:
+          ENABLE_CI_DEBUG: ${{ needs.resolve-options.outputs.include_debug }}
         run: |
           set -euo pipefail
 
           mkdir -p artifacts
+          mkdir -p artifacts/ci-debug
 
           # Find OVMF firmware files (prefer non-secureboot for compatibility)
           OVMF_CODE=$(find /usr/share -name "OVMF_CODE*.fd" 2>/dev/null | grep -v snakeoil | grep -v ms | grep -v secboot | head -1)
@@ -316,48 +324,60 @@ jobs:
             exit 1
           fi
 
-          run_boot() {
-            local mode=$1
-            local vnc_port=$2
-            local monitor_socket=$3
-            local serial_log=$4
-            local prefix=$5
-            local iso_path=$6
-            shift 6
-            local firmware_args=("$@")
+            run_boot() {
+              local mode=$1
+              local vnc_port=$2
+              local monitor_socket=$3
+              local serial_log=$4
+              local prefix=$5
+              local iso_path=$6
+              shift 6
+              local firmware_args=("$@")
 
-            # For EFI boot, use -drive instead of -cdrom for better compatibility
-            if [ -n "${firmware_args[*]}" ]; then
-              # EFI mode - use drive format for ISO
-              qemu-system-x86_64 \
-                -m 2048 -smp 2 \
-                -device virtio-gpu-pci \
-                -display none \
-                -vnc :"$vnc_port" \
-                -serial file:"$serial_log" \
-                -monitor unix:"$monitor_socket",server,nowait \
-                -drive file="$iso_path",format=raw,if=none,id=drive-cd,readonly=on \
-                -device ahci,id=ahci \
-                -device ide-cd,drive=drive-cd,bus=ahci.0 \
-                -boot order=d \
-                -no-reboot \
-                "${firmware_args[@]}" &
-            else
-              # BIOS mode - use simple cdrom
-              qemu-system-x86_64 \
-                -m 2048 -smp 2 \
-                -device virtio-gpu-pci \
-                -display none \
-                -vnc :"$vnc_port" \
-                -serial file:"$serial_log" \
-                -monitor unix:"$monitor_socket",server,nowait \
-                -cdrom "$iso_path" \
-                -boot d \
-                -no-reboot \
-                "${firmware_args[@]}" &
-            fi
+              # Create shared directory for CI debug extraction
+              local shared_dir="artifacts/ci-debug-shared-$prefix"
+              mkdir -p "$shared_dir"
 
-            QEMU_PID=$!
+              # Common QEMU args for virtio-9p shared folder
+              local shared_args=(
+                -fsdev local,id=fsdev0,path="$shared_dir",security_model=none
+                -device virtio-9p-pci,fsdev=fsdev0,mount_tag=ci_debug_share
+              )
+
+              # For EFI boot, use -drive instead of -cdrom for better compatibility
+              if [ -n "${firmware_args[*]}" ]; then
+                # EFI mode - use drive format for ISO
+                qemu-system-x86_64 \
+                  -m 2048 -smp 2 \
+                  -device virtio-gpu-pci \
+                  -display none \
+                  -vnc :"$vnc_port" \
+                  -serial file:"$serial_log" \
+                  -monitor unix:"$monitor_socket",server,nowait \
+                  -drive file="$iso_path",format=raw,if=none,id=drive-cd,readonly=on \
+                  -device ahci,id=ahci \
+                  -device ide-cd,drive=drive-cd,bus=ahci.0 \
+                  -boot order=d \
+                  -no-reboot \
+                  "${shared_args[@]}" \
+                  "${firmware_args[@]}" &
+              else
+                # BIOS mode - use simple cdrom
+                qemu-system-x86_64 \
+                  -m 2048 -smp 2 \
+                  -device virtio-gpu-pci \
+                  -display none \
+                  -vnc :"$vnc_port" \
+                  -serial file:"$serial_log" \
+                  -monitor unix:"$monitor_socket",server,nowait \
+                  -cdrom "$iso_path" \
+                  -boot d \
+                  -no-reboot \
+                  "${shared_args[@]}" \
+                  "${firmware_args[@]}" &
+              fi
+
+              QEMU_PID=$!
 
             # Wait for monitor socket
             for i in {1..30}; do
@@ -389,6 +409,30 @@ jobs:
               local name=$1
               printf "screendump artifacts/%s.ppm\n" "$name" | socat - UNIX-CONNECT:"$monitor_socket"
               convert "artifacts/$name.ppm" "artifacts/$name.png"
+            }
+
+            extract_ci_debug() {
+              local prefix=$1
+              
+              # Only extract if CI debug is enabled
+              if [ "${ENABLE_CI_DEBUG:-false}" != "true" ]; then
+                return 0
+              fi
+              
+              echo "Checking for CI debug logs from $prefix VM..."
+              
+              local shared_dir="artifacts/ci-debug-shared-$prefix"
+              
+              # Check if any files were written to the shared directory
+              if [ -d "$shared_dir" ] && [ "$(ls -A "$shared_dir" 2>/dev/null)" ]; then
+                echo "✓ Found CI debug logs from $prefix VM"
+                # Copy to final location
+                mkdir -p "artifacts/ci-debug/$prefix"
+                cp -r "$shared_dir"/* "artifacts/ci-debug/$prefix/" || true
+              else
+                echo "⚠ No CI debug logs found from $prefix VM (shared folder was empty)"
+                echo "  This is expected for non-debug builds or if the service didn't complete"
+              fi
             }
 
             # Extended screenshot timing to capture Plymouth boot animation
@@ -440,6 +484,7 @@ jobs:
 
           # BIOS boot test (main ISO)
           run_boot "bios" 1 /tmp/qemu-monitor-bios artifacts/serial-bios.log bios "$ISO_PATH"
+          extract_ci_debug "bios"
 
           # EFI boot test (main ISO)
           EFI_VARS="/tmp/OVMF_VARS.fd"
@@ -447,6 +492,7 @@ jobs:
           run_boot "efi" 2 /tmp/qemu-monitor-efi artifacts/serial-efi.log efi "$ISO_PATH" \
             -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
             -drive if=pflash,format=raw,file="$EFI_VARS"
+          extract_ci_debug "efi"
 
           # EFI boot test (debug ISO) when available
           if [ -n "${ISO_DEBUG_PATH:-}" ] && [ -f "$ISO_DEBUG_PATH" ]; then
@@ -455,6 +501,7 @@ jobs:
             run_boot "debug-efi" 3 /tmp/qemu-monitor-debug artifacts/serial-debug-efi.log debug-efi "$ISO_DEBUG_PATH" \
               -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
               -drive if=pflash,format=raw,file="$EFI_VARS_DEBUG"
+            extract_ci_debug "debug-efi"
           else
             echo "No debug ISO artifact found; skipping debug EFI boot test."
           fi
@@ -470,6 +517,14 @@ jobs:
             artifacts/debug-efi-shot*.png
             artifacts/*-boot.mp4
             artifacts/serial-*.log
+          if-no-files-found: warn
+
+      - name: Upload CI debug logs
+        if: always() && needs.resolve-options.outputs.include_debug == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-debug-logs
+          path: artifacts/ci-debug/
           if-no-files-found: warn
 
   preview-vm:

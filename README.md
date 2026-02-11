@@ -106,6 +106,7 @@ Workflow: `.github/workflows/build.yml`
 Add one of these tags to the commit message:
 
 - `[debug]`: include debug artifact fetch/upload in the workflow
+- `[ci-debug]`: same as `[debug]`, plus extract comprehensive debug logs from VM
 - `[preview]`: run preview VM for that commit
 - `[preview-debug]`: run preview VM using debug ISO (also enables debug artifacts)
 
@@ -113,8 +114,49 @@ Examples:
 
 ```text
 fix: tweak boot args [debug]
+fix: investigate plymouth issue [ci-debug]
 feat: test live VM path [preview]
 chore: validate debug boot path [preview-debug]
+```
+
+### CI Debug Log Collection
+
+When you use `[debug]` or `[ci-debug]` in your commit message, the workflow will:
+
+1. Build and boot the debug ISO in CI
+2. Automatically run `hyper-ci-debug` inside the VM to collect:
+   - System info (uname, OS release, kernel cmdline)
+   - Block devices and mounts
+   - Systemd service status (including failed services)
+   - Plymouth configuration and status
+   - Full journal logs (boot, Plymouth, Cockpit, WiFi, NetworkManager)
+   - Kernel messages (dmesg)
+   - Graphics/DRM information
+   - Network configuration
+   - GRUB configuration
+3. Extract these logs from the VM via virtio-9p shared folder
+4. Upload as `ci-debug-logs` artifact in GitHub Actions
+
+This takes you out of the critical path - no need to manually run commands or extract logs. Just add `[ci-debug]` to your commit message and download the artifact when the workflow completes.
+
+**Artifact structure:**
+```
+ci-debug-logs/
+├── bios/           # Logs from BIOS boot test
+├── efi/            # Logs from EFI boot test
+└── debug-efi/      # Logs from debug ISO EFI boot test
+    ├── SUMMARY.txt         # Quick overview
+    ├── system-info.txt
+    ├── journal.txt
+    ├── journal-plymouth.txt
+    ├── journal-cockpit.txt
+    ├── dmesg.txt
+    ├── systemd-failed.txt
+    ├── plymouth.txt
+    ├── graphics.txt
+    ├── network.txt
+    ├── grub.txt
+    └── ...
 ```
 
 ## Boot Modes
