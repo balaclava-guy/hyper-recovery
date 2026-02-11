@@ -78,7 +78,7 @@ pub async fn api_scan(State(state): State<Arc<AppState>>) -> impl IntoResponse {
 }
 
 /// Render the portal page HTML
-fn render_portal_page(state: &WifiStateSnapshot, ap_ip: &str) -> String {
+fn render_portal_page(state: &WifiStateSnapshot, _ap_ip: &str) -> String {
     let networks_html: String = state
         .available_networks
         .iter()

@@ -3,8 +3,7 @@
 use anyhow::{Context, Result};
 use std::process::Stdio;
 use tokio::process::{Child, Command};
-use tokio::sync::OnceCell;
-use std::sync::Mutex;
+use tokio::sync::{OnceCell, Mutex};
 
 // Global handles for cleanup
 static HOSTAPD_HANDLE: OnceCell<Mutex<Option<Child>>> = OnceCell::const_new();
@@ -130,10 +129,9 @@ pub async fn stop_ap() -> Result<()> {
 
     // Kill dnsmasq
     if let Some(handle) = DNSMASQ_HANDLE.get() {
-        if let Ok(mut guard) = handle.lock() {
-            if let Some(mut child) = guard.take() {
-                let _ = child.kill().await;
-            }
+        let mut guard = handle.lock().await;
+        if let Some(mut child) = guard.take() {
+            let _ = child.kill().await;
         }
     }
 
@@ -145,10 +143,9 @@ pub async fn stop_ap() -> Result<()> {
 
     // Kill hostapd
     if let Some(handle) = HOSTAPD_HANDLE.get() {
-        if let Ok(mut guard) = handle.lock() {
-            if let Some(mut child) = guard.take() {
-                let _ = child.kill().await;
-            }
+        let mut guard = handle.lock().await;
+        if let Some(mut child) = guard.take() {
+            let _ = child.kill().await;
         }
     }
 
