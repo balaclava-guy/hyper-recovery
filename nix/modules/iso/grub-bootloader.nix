@@ -33,7 +33,7 @@ let
     }
   '';
 
-  buildMenuGrub2 = { cfg ? config, params ? [], showMainEntry ? true }:
+  buildMenuGrub2 = { cfg ? config, params ? [], nameSuffix ? "" }:
     let
       menuConfig = {
         name = lib.concatStrings [
@@ -43,6 +43,7 @@ let
           cfg.system.nixos.label
           cfg.isoImage.appendToMenuLabel
           (lib.optionalString (cfg.isoImage.configurationName != null) (" " + cfg.isoImage.configurationName))
+          nameSuffix
         ];
         params = "init=${cfg.system.build.toplevel}/init ${toString cfg.boot.kernelParams} ${toString params}";
         image = "/boot/${cfg.boot.kernelPackages.kernel + "/" + cfg.system.boot.loader.kernelFile}";
@@ -51,11 +52,11 @@ let
       };
     in
     ''
-      ${lib.optionalString (showMainEntry && cfg.isoImage.showConfiguration) (menuBuilderGrub2 menuConfig)}
+      ${lib.optionalString cfg.isoImage.showConfiguration (menuBuilderGrub2 menuConfig)}
       ${lib.concatStringsSep "\n" (
         lib.mapAttrsToList (
           specName: { configuration, ... }:
-          buildMenuGrub2 { cfg = configuration; inherit params; inherit showMainEntry; }
+          buildMenuGrub2 { cfg = configuration; inherit params; inherit nameSuffix; }
         ) cfg.specialisation
       )}
     '';
@@ -135,7 +136,7 @@ let
       ${lib.concatMapStringsSep "\n" ({ title, class, params }: ''
         submenu "${title}" --class ${class} {
           ${grubMenuCfg}
-          ${buildMenuGrub2 { inherit params; }}
+          ${buildMenuGrub2 { inherit params; nameSuffix = " (${title})"; }}
         }
       '') optionsSubMenus}
     }
