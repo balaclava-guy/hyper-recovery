@@ -3,7 +3,6 @@
 use crate::controller::{AppState, ControlCommand, WifiStateSnapshot};
 use axum::{
     extract::State,
-    http::StatusCode,
     response::{Html, IntoResponse},
     Json,
 };

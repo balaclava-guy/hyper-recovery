@@ -8,7 +8,7 @@ use crate::controller::{AppState, WifiState};
 use axum::{
     extract::State,
     http::StatusCode,
-    response::{Html, IntoResponse, Response},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Router,
 };

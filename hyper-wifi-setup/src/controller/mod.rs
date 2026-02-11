@@ -6,7 +6,6 @@ pub mod state;
 pub mod ipc;
 
 pub use state::{WifiState, NetworkInfo, ConnectionStatus, WifiStateSnapshot};
-pub use ipc::{IpcRequest, IpcResponse};
 
 use std::sync::Arc;
 use tokio::sync::{watch, mpsc, RwLock};
@@ -36,7 +35,6 @@ pub struct AppState {
 pub enum ControlCommand {
     Scan,
     Connect { ssid: String, password: String },
-    Disconnect,
     Shutdown,
 }
 
@@ -104,7 +102,7 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
     }
 
     // Start AP
-    let ap_handle = ap_manager::start_ap(
+    let _ap_handle = ap_manager::start_ap(
         &app_state.config.interface,
         &app_state.config.ssid,
         &app_state.config.ap_ip,
@@ -201,9 +199,6 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
                                     let _ = ctrl_state.state_tx.send(state.clone());
                                 }
                             }
-                        }
-                        ControlCommand::Disconnect => {
-                            tracing::info!("Disconnect requested");
                         }
                         ControlCommand::Shutdown => {
                             tracing::info!("Shutdown requested");
