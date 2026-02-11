@@ -1,4 +1,4 @@
-name: Fetch, Smoke, and Preview
+name: Fetch, Visual, and Preview
 
 on:
   check_suite:
@@ -19,6 +19,11 @@ on:
         required: false
         default: false
         type: boolean
+      only_preview:
+        description: "Skip fetch + visual and run preview only"
+        required: false
+        default: false
+        type: boolean
       preview_duration:
         description: "Seconds to keep the preview tunnel alive"
         required: false
@@ -34,12 +39,12 @@ jobs:
     name: Fetch Artifacts from Garnix
     # Only run if:
     # 1. It's a check_suite event from 'garnix-ci' and it succeeded
-    # 2. OR it's a manual dispatch
+    # 2. OR it's a manual dispatch that is not preview-only
     if: |
       (github.event_name == 'check_suite' &&
        github.event.check_suite.app.slug == 'garnix-ci' &&
        github.event.check_suite.conclusion == 'success') ||
-      github.event_name == 'workflow_dispatch'
+      (github.event_name == 'workflow_dispatch' && inputs.only_preview != true)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -126,8 +131,8 @@ jobs:
           compression-level: 0
           retention-days: 90
 
-  visual-smoke:
-    name: Visual Smoke Test
+  visual:
+    name: Visual Test
     needs: fetch-artifacts
     if: needs.fetch-artifacts.result == 'success'
     runs-on: ubuntu-latest
@@ -351,7 +356,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: visual-smoke
+          name: visual
           path: |
             artifacts/bios-shot*.png
             artifacts/efi-shot*.png
@@ -363,7 +368,7 @@ jobs:
   preview-vm:
     name: Preview VM
     needs: fetch-artifacts
-    if: needs.fetch-artifacts.result == 'success' && github.event_name == 'workflow_dispatch' && inputs.run_preview == true
+    if: (needs.fetch-artifacts.result == 'success' || needs.fetch-artifacts.result == 'skipped') && github.event_name == 'workflow_dispatch' && inputs.run_preview == true
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -452,7 +457,7 @@ jobs:
 
           ISO_PATH="$ISO_PATH"
 
-          # Locate firmware (match visual-smoke logic: prefer non-secureboot)
+          # Locate firmware (match visual logic: prefer non-secureboot)
           OVMF_CODE=$(find /usr/share -name "OVMF_CODE*.fd" 2>/dev/null | grep -v snakeoil | grep -v ms | grep -v secboot | head -1)
           if [ -z "$OVMF_CODE" ]; then
             OVMF_CODE=$(find /usr/share -name "OVMF_CODE*.fd" 2>/dev/null | grep -v snakeoil | grep -v ms | head -1)
@@ -465,7 +470,7 @@ jobs:
           EFI_VARS="/tmp/OVMF_VARS_PREVIEW.fd"
           cp "$OVMF_VARS_TEMPLATE" "$EFI_VARS"
 
-          # Start QEMU with virtio-gpu-pci (matching visual-smoke)
+          # Start QEMU with virtio-gpu-pci (matching visual job)
           qemu-system-x86_64 \
             -m 2048 -smp 2 \
             -device virtio-gpu-pci \
