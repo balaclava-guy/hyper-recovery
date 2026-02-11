@@ -118,6 +118,11 @@ in
       };
     };
 
+    # Create credentials directory
+    systemd.tmpfiles.rules = [
+      "d /var/lib/hyper-wifi-setup 0700 root root -"
+    ];
+
     # Firewall rules for captive portal
     networking.firewall = {
       allowedTCPPorts = [ cfg.port 53 ];
