@@ -10,11 +10,12 @@
       snosu-plymouth-theme = pkgs.callPackage ../packages/themes/plymouth.nix {};
       snosu-grub-theme = pkgs.callPackage ../packages/themes/grub.nix {};
       
-      # Script packages
-      hyper-debug = (pkgs.callPackage ../packages/scripts {}).hyper-debug;
-      hyper-hw = (pkgs.callPackage ../packages/scripts {}).hyper-hw;
-      hyper-debug-serial = (pkgs.callPackage ../packages/scripts {}).hyper-debug-serial;
-      save-boot-logs = (pkgs.callPackage ../packages/scripts {}).save-boot-logs;
+       # Script packages
+       hyper-debug = (pkgs.callPackage ../packages/scripts {}).hyper-debug;
+       hyper-hw = (pkgs.callPackage ../packages/scripts {}).hyper-hw;
+       hyper-debug-serial = (pkgs.callPackage ../packages/scripts {}).hyper-debug-serial;
+       save-boot-logs = (pkgs.callPackage ../packages/scripts {}).save-boot-logs;
+       hyper-ci-debug = (pkgs.callPackage ../packages/scripts {}).hyper-ci-debug;
       
       # Firmware package
       hyper-firmware-core = (pkgs.callPackage ../packages/firmware.nix {}).hyperFirmwareCore;
