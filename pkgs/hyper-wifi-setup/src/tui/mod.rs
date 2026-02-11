@@ -70,7 +70,8 @@ impl App {
 
     async fn connect_to_selected(&mut self) {
         if let Some(ssid) = self.selected_ssid() {
-            match ipc::send_connect(&self.socket_path, &ssid, &self.password_input).await {
+            // TUI always saves credentials by default
+            match ipc::send_connect(&self.socket_path, &ssid, &self.password_input, true).await {
                 Ok(()) => {
                     self.input_mode = InputMode::Normal;
                     self.password_input.clear();

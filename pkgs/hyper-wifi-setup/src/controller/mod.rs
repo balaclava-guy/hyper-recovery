@@ -7,7 +7,6 @@ pub mod ipc;
 pub mod credentials;
 
 pub use state::{WifiState, NetworkInfo, ConnectionStatus, WifiStateSnapshot};
-pub use credentials::CredentialsStore;
 
 use std::sync::Arc;
 use tokio::sync::{watch, mpsc, RwLock};
