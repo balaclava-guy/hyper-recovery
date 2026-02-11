@@ -1625,7 +1625,9 @@ dependencies = [
 
 [[package]]
 name = "leptos-shadcn-alert"
-version = "0.9.1"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2d19f82aea0428d0511709aa8f4c84425113c40b9090962ab4a435e57ab3701"
 dependencies = [
  "leptos",
  "leptos-node-ref",
@@ -1638,7 +1640,9 @@ dependencies = [
 
 [[package]]
 name = "leptos-shadcn-badge"
-version = "0.9.1"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4a2c5ab3d80d3dab4fefd761410ef7e2b158cc7fe0fe606c7ad2260d38a512d"
 dependencies = [
  "leptos",
  "leptos-node-ref",
@@ -1651,7 +1655,9 @@ dependencies = [
 
 [[package]]
 name = "leptos-shadcn-button"
-version = "0.9.1"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c36e0cd89ce2860d5b0abfe61e4bcbc3ec1d549a4020238a2d23d1294a25e66"
 dependencies = [
  "leptos",
  "leptos-node-ref",
@@ -1664,7 +1670,9 @@ dependencies = [
 
 [[package]]
 name = "leptos-shadcn-card"
-version = "0.9.1"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2a2dace239bcea58331d28f8c82364c539e24697282ab5aeef5e07533d54ef1"
 dependencies = [
  "leptos",
  "leptos-node-ref",
@@ -1677,7 +1685,9 @@ dependencies = [
 
 [[package]]
 name = "leptos-shadcn-input"
-version = "0.9.1"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "348052ad89926cfe13a769a0145bcd9d6665ed7b82af98608090aea50857721e"
 dependencies = [
  "leptos",
  "leptos-node-ref",
