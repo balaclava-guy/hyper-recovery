@@ -470,12 +470,29 @@ jobs:
               echo "$mode brightness check: PASS"
             fi
 
-            # Wait for hyper-ci-debug service to complete (only in debug builds)
-            # The service runs after multi-user.target and needs time to collect logs
-            # Add a buffer to ensure all logs are captured and written to shared folder
+            # Poll for hyper-ci-debug completion marker (only in debug builds)
+            # The debug service writes .CI_DEBUG_COMPLETE marker when finished
+            # This self-coordinates: VM signals readiness instead of fixed timeout
             if [ "${ENABLE_CI_DEBUG:-false}" = "true" ]; then
-              echo "Waiting for hyper-ci-debug service to complete..."
-              sleep 120
+              echo "Polling for hyper-ci-debug completion marker..."
+              local marker_file="$shared_dir/.CI_DEBUG_COMPLETE"
+              local max_wait=300  # 5 minutes max wait
+              local waited=0
+              
+              while [ ! -f "$marker_file" ] && [ $waited -lt $max_wait ]; do
+                sleep 5
+                waited=$((waited + 5))
+                if [ $((waited % 30)) -eq 0 ]; then
+                  echo "  Still waiting... (${waited}s/${max_wait}s)"
+                fi
+              done
+              
+              if [ -f "$marker_file" ]; then
+                echo "✓ CI debug marker found after ${waited}s"
+              else
+                echo "⚠ CI debug marker not found after ${max_wait}s, proceeding anyway"
+                echo "  This may indicate the debug service failed to run"
+              fi
             fi
 
             # Shutdown QEMU

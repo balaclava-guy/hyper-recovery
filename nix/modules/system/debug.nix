@@ -121,8 +121,8 @@ in
     serviceConfig = {
       Type = "oneshot";
       ExecStart = "${scripts.hyper-ci-debug}/bin/hyper-ci-debug";
-      # Allow longer timeout for comprehensive collection
-      TimeoutStartSec = "120s";
+      # Safeguard timeout (workflow poll will wait up to 5min for marker)
+      TimeoutStartSec = "300s";
     };
   };
 }

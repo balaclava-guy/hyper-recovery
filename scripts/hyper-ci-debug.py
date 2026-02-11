@@ -515,6 +515,12 @@ def main() -> int:
     print(f"\n✓ CI debug info collected in: {out_dir}")
     print(f"✓ Summary: {out_dir}/SUMMARY.txt")
     
+    # Write completion marker file for coordination with CI
+    # The workflow will poll for this file to know when to shut down the VM
+    marker_file = out_dir / ".CI_DEBUG_COMPLETE"
+    marker_file.write_text(f"Completed at: {datetime.now().isoformat()}\n")
+    print(f"✓ Wrote completion marker: {marker_file}")
+    
     return 0
 
 
