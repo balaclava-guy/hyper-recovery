@@ -30,13 +30,13 @@
 
         installPhase = ''
           mkdir -p $out/bin
-          cp ${../../scripts/theme-vm} $out/bin/theme-vm
-          chmod +x $out/bin/theme-vm
+          cp ${../../scripts/theme-vm.py} $out/bin/theme-vm.py
+          chmod +x $out/bin/theme-vm.py
 
-          substituteInPlace $out/bin/theme-vm \
+          substituteInPlace $out/bin/theme-vm.py \
             --replace-fail '#!/usr/bin/env python3' '#!${pkgs.python3}/bin/python3'
 
-          substituteInPlace $out/bin/theme-vm \
+          substituteInPlace $out/bin/theme-vm.py \
             --replace-fail "@qemu_system_aarch64@" "${pkgs.qemu}/bin/qemu-system-aarch64" \
             --replace-fail "@qemu_img@" "${pkgs.qemu}/bin/qemu-img" \
             --replace-fail "@mformat@" "${pkgs.mtools}/bin/mformat" \
@@ -44,7 +44,7 @@
             --replace-fail "@xorriso@" "${pkgs.xorriso}/bin/xorriso" \
             --replace-fail "@firmware_search_dirs@" ""
 
-          patchShebangs $out/bin/theme-vm
+          patchShebangs $out/bin/theme-vm.py
         '';
       };
     };

@@ -79,7 +79,7 @@ boot.initrd.kernelModules = [
 nix build .#usb         → Hybrid USB image
 nix build .#usb-debug   → Debug variant
 nix build .#vm          → QCOW2 for testing
-nix build .#images-7z   → Individual .7z files
+nix build .#image-compressed   → Compressed archive for regular image
 ```
 
 **Compression Changes**:
@@ -140,7 +140,7 @@ Ventoy → Chainload GRUB → /boot/grub/grub.cfg → kernel + initrd → Plymou
 ### Before Release
 - [ ] Build succeeds: `nix build .#usb`
 - [ ] Build succeeds: `nix build .#usb-debug`
-- [ ] Build succeeds: `nix build .#images-7z`
+- [ ] Build succeeds: `nix build .#image-compressed`
 - [ ] Individual 7z files created (not monolithic)
 - [ ] Image boots in BIOS mode (QEMU test)
 - [ ] Image boots in EFI mode (QEMU test)

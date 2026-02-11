@@ -47,15 +47,15 @@ in
     useOSProber = true;  # Detect other OSes on local drives
   };
   
-  boot.loader.systemd-boot.enable = lib.mkForce false;
-  boot.loader.grub.memtest86.enable = lib.mkForce false;
+  boot.loader.systemd-boot.enable = false;
+  boot.loader.grub.memtest86.enable = false;
 
   #############################################################################
   # COCKPIT WEB UI BRANDING
   #############################################################################
   
   # Cockpit login title
-  services.cockpit.settings.WebService.LoginTitle = lib.mkDefault "SNOSU Hyper Recovery";
+  services.cockpit.settings.WebService.LoginTitle = lib.mkDefault "SNOSU: Hyper Recovery";
   
   # Cockpit 353+ reads branding from flat files in /etc/cockpit/branding/
   environment.etc = {
@@ -79,7 +79,7 @@ in
   #############################################################################
   
   environment.etc."motd".text = ''
-    Welcome to Snosu Hyper Recovery Environment
+    Welcome to SNOSU: Hyper Recovery Environment
     * Access the Web UI at: https://<IP>:9090
     * Default user: snosu / nixos
   '';

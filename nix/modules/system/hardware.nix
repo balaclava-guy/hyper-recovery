@@ -2,7 +2,6 @@
 
 # Hardware configuration for Hyper Recovery environment
 # Kernel, firmware, and driver configuration
-# WITHOUT any debug features (clean, production-ready)
 
 let
   firmware = import ../../packages/firmware.nix { inherit pkgs lib; };
@@ -11,13 +10,9 @@ in
 {
   # Kernel & Boot Parameters (CLEAN - no debug)
   boot.kernelPackages = pkgs.linuxPackages;
-  boot.kernelParams = [ 
-    "quiet" 
-    "splash" 
-    "loglevel=0"
-    "rd.systemd.show_status=false" 
-    "rd.udev.log_level=3" 
-    "udev.log_priority=3" 
+  boot.kernelParams = [
+    "quiet"
+    "splash"
     "vt.global_cursor_default=0"
     "fbcon=nodefer"
     "plymouth.ignore-serial-consoles"

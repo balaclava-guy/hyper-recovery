@@ -2,7 +2,6 @@
 
 # Base system configuration for Hyper Recovery environment
 # Core system identity, users, networking, and packages
-# WITHOUT any debug features (those go in debug.nix)
 
 let
   scripts = pkgs.callPackage ../../packages/scripts {};
@@ -59,6 +58,6 @@ in
   # SSH
   services.openssh = {
     enable = true;
-    settings.PermitRootLogin = "yes";
+    settings.PermitRootLogin = lib.mkDefault "no";
   };
 }

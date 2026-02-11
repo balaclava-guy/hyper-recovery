@@ -2,7 +2,6 @@
 
 # Services configuration for Hyper Recovery environment
 # Cockpit, virtualization, and core services
-# WITHOUT any automatic debug services
 
 {
   # Virtualization Stack

@@ -3,7 +3,7 @@ builds:
     - "*.img"
     - "*.qcow2"
     - "*.iso"
-  # By default garnix builds all packages in the flake.
-  # We want it to build the compressed artifacts bundle.
+  # Keep default Garnix builds regular-only for faster CI.
+  # Debug artifacts can be fetched on demand via workflow_dispatch.
   include:
-    - packages.x86_64-linux.images-7z
+    - packages.x86_64-linux.image-compressed

@@ -14,7 +14,7 @@ on:
       debug:
         description: "Enable debug mode (verbose logs, usb-debug image)"
         required: false
-        default: "true"
+        default: "false"
         type: boolean
 
 jobs:

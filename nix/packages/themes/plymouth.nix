@@ -33,7 +33,7 @@ pkgs.stdenvNoCC.mkDerivation {
   '';
   
   meta = with lib; {
-    description = "Snosu Hyper Recovery Plymouth boot splash theme";
+    description = "SNOSU Hyper Recovery Plymouth boot splash theme";
     license = licenses.mit;
     platforms = platforms.linux;
   };

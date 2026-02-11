@@ -39,7 +39,7 @@ pkgs.stdenvNoCC.mkDerivation {
   '';
   
   meta = with lib; {
-    description = "Snosu Hyper Recovery GRUB2 boot theme";
+    description = "SNOSU Hyper Recovery GRUB2 boot theme";
     license = licenses.mit;
     platforms = platforms.linux;
   };

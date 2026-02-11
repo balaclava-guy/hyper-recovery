@@ -1,4 +1,4 @@
-# Snosu Hyper Recovery Plymouth Theme
+# SNOSU Hyper Recovery Plymouth Theme
 
 This is a custom Plymouth boot splash theme created from `snouhr-logo-animated.mp4`.
 

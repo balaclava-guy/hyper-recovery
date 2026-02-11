@@ -3,6 +3,44 @@
 # Flake-parts module for NixOS image configurations
 # Defines nixosConfigurations and image build outputs
 
+let
+  mkUsbImage = { debug ? false }:
+    inputs.nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules =
+        [
+          # Core system modules (clean, no debug)
+          self.nixosModules.base
+          self.nixosModules.hardware
+          self.nixosModules.branding
+          self.nixosModules.services
+          self.nixosModules.wifi-setup
+
+          # ISO image infrastructure
+          "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
+          self.nixosModules.iso-base
+
+          # Shared image specifics
+          {
+            isoImage.volumeID = if debug then "HYPER-RECOVERY-DEBUG" else "HYPER-RECOVERY";
+            image.baseName = inputs.nixpkgs.lib.mkForce (
+              if debug then "snosu-hyper-recovery-debug-x86_64-linux" else "snosu-hyper-recovery-x86_64-linux"
+            );
+            isoImage.prependToMenuLabel = if debug then "START HYPER RECOVERY (Debug)" else "START HYPER RECOVERY";
+
+            # Enable WiFi setup service
+            services.hyper-wifi-setup = {
+              enable = true;
+              autoStartTui = true;
+            };
+          }
+        ]
+        ++ inputs.nixpkgs.lib.optionals debug [
+          # Debug enhancements (the ONLY difference)
+          self.nixosModules.debug
+        ];
+    };
+in
 {
   # Export NixOS modules for reuse
   flake.nixosModules = {
@@ -18,122 +56,83 @@
 
   # Define NixOS configurations at flake level
   flake.nixosConfigurations = {
-    # Regular USB Live Image (Clean, production-ready)
-    usb-live = inputs.nixpkgs.lib.nixosSystem {
-      system = "x86_64-linux";
-      modules = [
-        # Core system modules (clean, no debug)
-        self.nixosModules.base
-        self.nixosModules.hardware
-        self.nixosModules.branding
-        self.nixosModules.services
-        self.nixosModules.wifi-setup
-        
-        # ISO image infrastructure
-        "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
-        self.nixosModules.iso-base
-        
-        # Regular image specifics
-        {
-          isoImage.volumeID = "HYPER_RECOVERY";
-          image.fileName = "snosu-hyper-recovery-x86_64-linux.iso";
-          isoImage.prependToMenuLabel = "START HYPER RECOVERY";
-          
-          # Enable WiFi setup service
-          services.hyper-wifi-setup = {
-            enable = true;
-            autoStartTui = true;
-          };
-        }
-      ];
-    };
-
-    # Debug USB Live Image (Regular + debug overlay)
-    usb-live-debug = inputs.nixpkgs.lib.nixosSystem {
-      system = "x86_64-linux";
-      modules = [
-        # Core system modules (same as regular)
-        self.nixosModules.base
-        self.nixosModules.hardware
-        self.nixosModules.branding
-        self.nixosModules.services
-        self.nixosModules.wifi-setup
-        
-        # Debug enhancements (the ONLY difference)
-        self.nixosModules.debug
-        
-        # ISO image infrastructure
-        "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
-        self.nixosModules.iso-base
-        
-        # Debug image specifics
-        {
-          isoImage.volumeID = "HYPER_RECOVERY_DEBUG";
-          image.fileName = "snosu-hyper-recovery-debug-x86_64-linux.iso";
-          isoImage.prependToMenuLabel = "START HYPER RECOVERY (Debug)";
-          
-          # Enable WiFi setup service
-          services.hyper-wifi-setup = {
-            enable = true;
-            autoStartTui = true;
-          };
-        }
-      ];
-    };
+    usb-live = mkUsbImage { };
+    usb-live-debug = mkUsbImage { debug = true; };
   };
 
   perSystem = { pkgs, system, lib, ... }:
-    lib.optionalAttrs (system == "x86_64-linux") {
-      packages = {
-        # USB Live Image (Regular)
-        usb = self.nixosConfigurations.usb-live.config.system.build.isoImage;
+    lib.optionalAttrs (system == "x86_64-linux") (
+      let
+        usbImage = self.nixosConfigurations.usb-live.config.system.build.isoImage;
+        usbDebugImage = self.nixosConfigurations.usb-live-debug.config.system.build.isoImage;
 
-        # USB Live Image (Debug)
-        usb-debug = self.nixosConfigurations.usb-live-debug.config.system.build.isoImage;
+        mkCompressedArtifacts = { name, imageRoots }:
+          pkgs.runCommand name {
+            nativeBuildInputs = [ pkgs._7zz pkgs.findutils pkgs.coreutils ];
+          } ''
+            set -euo pipefail
+            mkdir -p $out
 
-        # Meta-package for CI
-        images = pkgs.linkFarm "snosu-images" [
-          { name = "usb"; path = self.nixosConfigurations.usb-live.config.system.build.isoImage; }
-          { name = "usb-debug"; path = self.nixosConfigurations.usb-live-debug.config.system.build.isoImage; }
-        ];
+            files=$(find -L ${lib.escapeShellArgs (map builtins.toString imageRoots)} -type f \( \
+              -name "*.iso" -o -name "*.img" -o -name "*.raw" \
+            \) || true)
 
-        # Compressed artifacts for CI
-        images-7z = pkgs.runCommand "snosu-hyper-recovery-images-7z" {
-          nativeBuildInputs = [ pkgs._7zz pkgs.findutils pkgs.coreutils ];
-        } ''
-          set -euo pipefail
-          mkdir -p $out
-
-          images_root="${self.nixosConfigurations.usb-live.config.system.build.isoImage}"
-          images_debug_root="${self.nixosConfigurations.usb-live-debug.config.system.build.isoImage}"
-
-          files=$(find -L "$images_root" "$images_debug_root" -type f \( \
-            -name "*.iso" -o -name "*.img" -o -name "*.raw" \
-          \) || true)
-
-          if [ -z "$files" ]; then
-            echo "No image artifacts found" >&2
-            exit 1
-          fi
-
-          while IFS= read -r file; do
-            if [ -z "$file" ]; then continue; fi
-
-            base_name=$(basename "$file")
-            parent_path=$(dirname "$file")
-
-            if [[ "$parent_path" == *"debug"* ]]; then
-              out_name="hyper-recovery-debug.iso.7z"
-            else
-              out_name="hyper-recovery-live.iso.7z"
+            if [ -z "$files" ]; then
+              echo "No image artifacts found" >&2
+              exit 1
             fi
 
-            echo "Compressing $base_name -> $out_name..."
-            7zz a -t7z -mx=9 -mmt -ms=on "$out/$out_name" "$file"
-          done <<< "$files"
+            while IFS= read -r file; do
+              if [ -z "$file" ]; then continue; fi
 
-          ls -lh $out/
-        '';
-      };
-    };
+              base_name=$(basename "$file")
+              parent_path=$(dirname "$file")
+
+              if [[ "$parent_path" == *"debug"* ]]; then
+                out_name="hyper-recovery-debug.iso.7z"
+              else
+                out_name="hyper-recovery-live.iso.7z"
+              fi
+
+              echo "Compressing $base_name -> $out_name..."
+              7zz a -t7z -mx=9 -mmt -ms=on "$out/$out_name" "$file"
+            done <<< "$files"
+
+            ls -lh $out/
+          '';
+      in
+      {
+        packages = {
+          # USB Live Images
+          usb = usbImage;
+          usb-debug = usbDebugImage;
+
+          # Meta-packages
+          image = pkgs.linkFarm "snosu-image" [
+            { name = "usb"; path = usbImage; }
+          ];
+          image-debug = pkgs.linkFarm "snosu-image-debug" [
+            { name = "usb-debug"; path = usbDebugImage; }
+          ];
+          image-all = pkgs.linkFarm "snosu-image-all" [
+            { name = "usb"; path = usbImage; }
+            { name = "usb-debug"; path = usbDebugImage; }
+          ];
+
+          # Compressed artifacts
+          image-compressed = mkCompressedArtifacts {
+            name = "snosu-hyper-recovery-image-compressed";
+            imageRoots = [ usbImage ];
+          };
+          image-debug-compressed = mkCompressedArtifacts {
+            name = "snosu-hyper-recovery-image-debug-compressed";
+            imageRoots = [ usbDebugImage ];
+          };
+          image-all-compressed = mkCompressedArtifacts {
+            name = "snosu-hyper-recovery-image-all-compressed";
+            imageRoots = [ usbImage usbDebugImage ];
+          };
+        };
+      }
+    );
 }

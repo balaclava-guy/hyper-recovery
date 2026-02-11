@@ -190,8 +190,8 @@
 ```bash
 nix build .#usb              # Regular image
 nix build .#usb-debug        # Debug image
-nix build .#images           # All images
-nix build .#images-7z        # Compressed
+nix build .#image-all        # All images
+nix build .#image-compressed # Compressed
 ```
 
 ### Testing

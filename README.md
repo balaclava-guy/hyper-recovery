@@ -54,8 +54,8 @@ Debug variant with verbose logging and Plymouth debugging enabled.
 ### All Images + Compressed Artifacts
 
 ```bash
-nix build .#images        # All images as symlinks
-nix build .#images-7z     # Individual .7z files for each image
+nix build .#image-all           # All images as symlinks
+nix build .#image-compressed    # Compressed archive for regular image
 ```
 
 ## Writing the USB Image

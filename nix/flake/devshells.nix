@@ -35,14 +35,26 @@
         }
         {
           name = "build-all";
-          command = "nix build .#images";
-          help = "Build all images";
+          command = "nix build .#image-all";
+          help = "Build all image symlinks";
           category = "build";
         }
         {
-          name = "compress-images";
-          command = "nix build .#images-7z";
-          help = "Build compressed 7z archives";
+          name = "compress-image";
+          command = "nix build .#image-compressed";
+          help = "Build compressed archive (regular image)";
+          category = "build";
+        }
+        {
+          name = "compress-image-debug";
+          command = "nix build .#image-debug-compressed";
+          help = "Build compressed archive (debug image)";
+          category = "build";
+        }
+        {
+          name = "compress-image-all";
+          command = "nix build .#image-all-compressed";
+          help = "Build compressed archives (all images)";
           category = "build";
         }
         {
@@ -73,7 +85,7 @@
       ];
       
       motd = ''
-        {202}Snosu Hyper Recovery Development Environment{reset}
+        {202}SNOSU Hyper Recovery Development Environment{reset}
         
         $(type -p menu &>/dev/null && menu)
         

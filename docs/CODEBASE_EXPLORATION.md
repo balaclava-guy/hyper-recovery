@@ -799,10 +799,10 @@ nix build .#usb
 nix build .#usb-debug
 
 # All images
-nix build .#images
+nix build .#image-all
 
 # Compressed artifacts
-nix build .#images-7z
+nix build .#image-compressed
 ```
 
 ### Output Structure

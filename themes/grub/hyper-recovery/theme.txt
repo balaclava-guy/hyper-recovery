@@ -1,4 +1,4 @@
-# Snosu Hyper Recovery GRUB Theme
+# SNOSU Hyper Recovery GRUB Theme
 
 # Global Property
 title-text: ""
@@ -57,6 +57,6 @@ terminal-font: "Hyper Fighting Regular 16"
 + image {
     file = "logo_scaled.png"
     left = 2%
-    top = 18%
+    top = 50%
     width = 45%
 }

@@ -4,6 +4,12 @@ on:
   check_suite:
     types: [completed]
   workflow_dispatch:
+    inputs:
+      include_debug:
+        description: "Also fetch and upload debug artifacts"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   fetch-artifacts:
@@ -34,15 +40,26 @@ jobs:
             trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=
 
       - name: Fetch from Cache
+        id: fetch-profile
         run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.include_debug }}" = "true" ]; then
+            PKG="image-all-compressed"
+            echo "include_debug=true (manual dispatch): fetching regular + debug artifacts"
+          else
+            PKG="image-compressed"
+            echo "Fetching regular artifacts only"
+          fi
+
+          echo "pkg=$PKG" >> "$GITHUB_OUTPUT"
+
           echo "::group::Fetching Artifacts"
           echo "Fetching artifacts from Garnix cache for commit $(git rev-parse --short HEAD)..."
           
-          # Build the images-7z package. 
+          # Build the selected compressed artifacts package.
           # Since Garnix already built this successfully (check_suite=success),
-          # this should just download the closure from cache.garnix.io.
+          # regular artifacts should download from cache.garnix.io.
           # We add --refresh to ensure we check the remote cache.
-          nix build .#images-7z --out-link result-artifacts --print-build-logs --refresh
+          nix build .#"$PKG" --out-link result-artifacts --print-build-logs --refresh
           
           echo "::endgroup::"
 

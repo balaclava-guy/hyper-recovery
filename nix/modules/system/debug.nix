@@ -36,6 +36,8 @@ in
   #############################################################################
   # CONSOLE DEBUG SETTINGS
   #############################################################################
+
+  services.openssh.settings.PermitRootLogin = "yes";
   
   boot.consoleLogLevel = lib.mkForce 7;
   boot.initrd.verbose = lib.mkForce true;
