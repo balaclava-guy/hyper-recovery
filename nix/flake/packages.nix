@@ -17,8 +17,8 @@
        save-boot-logs = (pkgs.callPackage ../packages/scripts {}).save-boot-logs;
        hyper-ci-debug = (pkgs.callPackage ../packages/scripts {}).hyper-ci-debug;
       
-      # Firmware package
-      hyper-firmware-core = (pkgs.callPackage ../packages/firmware.nix {}).hyperFirmwareCore;
+       # Firmware package
+       hyper-firmware-core = (pkgs.callPackage ../packages/firmware.nix {}).hyper-firmware-core;
       
       # WiFi setup daemon
       hyper-wifi-setup = pkgs.callPackage ../packages/hyper-wifi-setup.nix {};

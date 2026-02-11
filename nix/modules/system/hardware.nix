@@ -5,7 +5,7 @@
 
 let
   firmware = import ../../packages/firmware.nix { inherit pkgs lib; };
-  hyperFirmwareCore = firmware.hyperFirmwareCore;
+  hyper-firmware-core = firmware.hyper-firmware-core;
 in
 {
   # Kernel & Boot Parameters (CLEAN - no debug)
@@ -58,7 +58,7 @@ in
   hardware.enableAllFirmware = false;
   hardware.enableRedistributableFirmware = false;
   hardware.firmware = [
-    hyperFirmwareCore
+    hyper-firmware-core
     pkgs.wireless-regdb
   ];
   hardware.wirelessRegulatoryDatabase = true;

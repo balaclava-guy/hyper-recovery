@@ -37,7 +37,7 @@ let
   ];
 in
 {
-  hyperFirmwareCore = runCommand "hyper-firmware-core" {
+  hyper-firmware-core = runCommand "hyper-firmware-core" {
     # Ensure the builder has basic utils even in restricted environments.
     nativeBuildInputs = [ coreutils findutils ];
   } ''
