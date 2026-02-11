@@ -86,6 +86,37 @@ sudo sync
 3. Boot from the USB - Ventoy will present it in the boot menu
 4. Works in both BIOS and EFI modes automatically
 
+## GitHub Actions Quick Controls
+
+Workflow: `.github/workflows/build.yml`
+
+### Manual runs (`Run workflow`)
+
+- `mode=standard`: fetch/upload regular artifacts + run visual test
+- `mode=debug`: fetch/upload regular + debug artifacts + run visual test
+- `mode=preview`: run preview VM with standard ISO
+- `mode=preview-debug`: run preview VM with debug ISO
+- `mode=preview-only`: run preview VM only (skip fetch + visual)
+- `mode=preview-only-debug`: run preview VM only with debug ISO
+
+`preview_duration` controls how long the preview tunnel stays alive.
+
+### Commit-triggered runs (`check_suite` from Garnix)
+
+Add one of these tags to the commit message:
+
+- `[debug]`: include debug artifact fetch/upload in the workflow
+- `[preview]`: run preview VM for that commit
+- `[preview-debug]`: run preview VM using debug ISO (also enables debug artifacts)
+
+Examples:
+
+```text
+fix: tweak boot args [debug]
+feat: test live VM path [preview]
+chore: validate debug boot path [preview-debug]
+```
+
 ## Boot Modes
 
 The ISO image is a **hybrid boot image** designed for USB:

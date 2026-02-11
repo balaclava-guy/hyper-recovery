@@ -9,49 +9,154 @@ on:
         description: "Git ref (branch, tag, or commit) to run against"
         required: false
         default: "main"
-      include_debug:
-        description: "Also fetch and upload debug artifacts"
-        required: false
-        default: false
-        type: boolean
-      run_preview:
-        description: "Run Preview VM job"
-        required: false
-        default: false
-        type: boolean
-      only_preview:
-        description: "Skip fetch + visual and run preview only"
-        required: false
-        default: false
-        type: boolean
+      mode:
+        description: "Run mode"
+        required: true
+        default: "standard"
+        type: choice
+        options:
+          - standard
+          - debug
+          - preview
+          - preview-debug
+          - preview-only
+          - preview-only-debug
       preview_duration:
         description: "Seconds to keep the preview tunnel alive"
         required: false
         default: "600"
-      preview_debug:
-        description: "Use debug ISO for preview VM"
-        required: false
-        default: false
-        type: boolean
 
 jobs:
+  resolve-options:
+    name: Resolve Run Options
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'check_suite' && github.event.check_suite.app.slug == 'garnix-ci')
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.resolve.outputs.ref }}
+      include_debug: ${{ steps.resolve.outputs.include_debug }}
+      run_preview: ${{ steps.resolve.outputs.run_preview }}
+      preview_debug: ${{ steps.resolve.outputs.preview_debug }}
+      run_fetch_visual: ${{ steps.resolve.outputs.run_fetch_visual }}
+      preview_duration: ${{ steps.resolve.outputs.preview_duration }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.event.check_suite.head_sha || github.sha }}
+
+      - name: Resolve options from dispatch mode and commit flags
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          REF="${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.event.check_suite.head_sha || github.sha }}"
+          MODE="${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'standard' }}"
+          PREVIEW_DURATION="${{ github.event_name == 'workflow_dispatch' && inputs.preview_duration || '600' }}"
+
+          COMMIT_MESSAGE="$(git log -1 --pretty=%B)"
+          COMMIT_MESSAGE_LC="$(printf '%s' "$COMMIT_MESSAGE" | tr '[:upper:]' '[:lower:]')"
+
+          include_debug=false
+          run_preview=false
+          preview_debug=false
+          run_fetch_visual=true
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            case "$MODE" in
+              standard)
+                ;;
+              debug)
+                include_debug=true
+                ;;
+              preview)
+                run_preview=true
+                ;;
+              preview-debug)
+                include_debug=true
+                run_preview=true
+                preview_debug=true
+                ;;
+              preview-only)
+                run_fetch_visual=false
+                run_preview=true
+                ;;
+              preview-only-debug)
+                run_fetch_visual=false
+                include_debug=true
+                run_preview=true
+                preview_debug=true
+                ;;
+              *)
+                echo "::error::Unknown mode: $MODE"
+                exit 1
+                ;;
+            esac
+          else
+            # Commit-message flags for check_suite-driven runs:
+            # [debug], [preview], [preview-debug]
+            if printf '%s' "$COMMIT_MESSAGE_LC" | grep -q '\[debug\]'; then
+              include_debug=true
+            fi
+
+            if printf '%s' "$COMMIT_MESSAGE_LC" | grep -q '\[preview\]'; then
+              run_preview=true
+            fi
+
+            if printf '%s' "$COMMIT_MESSAGE_LC" | grep -q '\[preview-debug\]'; then
+              include_debug=true
+              run_preview=true
+              preview_debug=true
+            fi
+          fi
+
+          {
+            echo "ref=$REF"
+            echo "include_debug=$include_debug"
+            echo "run_preview=$run_preview"
+            echo "preview_debug=$preview_debug"
+            echo "run_fetch_visual=$run_fetch_visual"
+            echo "preview_duration=$PREVIEW_DURATION"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Run Options"
+            echo "- Ref: \`$REF\`"
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              echo "- Dispatch mode: \`$MODE\`"
+            else
+              echo "- Trigger: \`check_suite\`"
+              echo "- Commit flags: \`[debug]\`, \`[preview]\`, \`[preview-debug]\`"
+            fi
+            echo "- include_debug: \`$include_debug\`"
+            echo "- run_preview: \`$run_preview\`"
+            echo "- preview_debug: \`$preview_debug\`"
+            echo "- run_fetch_visual: \`$run_fetch_visual\`"
+            echo "- preview_duration: \`$PREVIEW_DURATION\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   fetch-artifacts:
     name: Fetch Artifacts from Garnix
-    # Only run if:
-    # 1. It's a check_suite event from 'garnix-ci' and it succeeded
-    # 2. OR it's a manual dispatch that is not preview-only
+    needs: resolve-options
     if: |
-      (github.event_name == 'check_suite' &&
-       github.event.check_suite.app.slug == 'garnix-ci' &&
-       github.event.check_suite.conclusion == 'success') ||
-      (github.event_name == 'workflow_dispatch' && inputs.only_preview != true)
+      needs.resolve-options.outputs.run_fetch_visual == 'true' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'check_suite' &&
+          github.event.check_suite.app.slug == 'garnix-ci' &&
+          github.event.check_suite.conclusion == 'success'
+        )
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.event.check_suite.head_sha || github.sha }}
+          ref: ${{ needs.resolve-options.outputs.ref }}
 
       - name: Install Nix
         uses: cachix/install-nix-action@v27
@@ -63,9 +168,9 @@ jobs:
       - name: Fetch from Cache
         id: fetch-profile
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.include_debug }}" = "true" ]; then
+          if [ "${{ needs.resolve-options.outputs.include_debug }}" = "true" ]; then
             PKG="image-all-compressed"
-            echo "include_debug=true (manual dispatch): fetching regular + debug artifacts"
+            echo "include_debug=true: fetching regular + debug artifacts"
           else
             PKG="image-compressed"
             echo "Fetching regular artifacts only"
@@ -133,7 +238,9 @@ jobs:
 
   visual:
     name: Visual Test
-    needs: fetch-artifacts
+    needs:
+      - resolve-options
+      - fetch-artifacts
     if: needs.fetch-artifacts.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -141,7 +248,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.event.check_suite.head_sha || github.sha }}
+          ref: ${{ needs.resolve-options.outputs.ref }}
 
       - name: Download live ISO artifact
         uses: actions/download-artifact@v4
@@ -150,7 +257,7 @@ jobs:
           path: dist/live
 
       - name: Download debug ISO artifact (optional)
-        if: github.event_name == 'workflow_dispatch' && inputs.include_debug == true
+        if: needs.resolve-options.outputs.include_debug == 'true'
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
@@ -367,8 +474,17 @@ jobs:
 
   preview-vm:
     name: Preview VM
-    needs: fetch-artifacts
-    if: (needs.fetch-artifacts.result == 'success' || needs.fetch-artifacts.result == 'skipped') && github.event_name == 'workflow_dispatch' && inputs.run_preview == true
+    needs: resolve-options
+    if: |
+      needs.resolve-options.outputs.run_preview == 'true' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'check_suite' &&
+          github.event.check_suite.app.slug == 'garnix-ci' &&
+          github.event.check_suite.conclusion == 'success'
+        )
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -383,7 +499,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ needs.resolve-options.outputs.ref }}
 
       - name: Install Nix
         uses: cachix/install-nix-action@v27
@@ -406,7 +522,7 @@ jobs:
       - name: Fetch/Build ISO (uses Garnix cache when available)
         run: |
           set -euo pipefail
-          if [ "${{ inputs.preview_debug }}" == "true" ]; then
+          if [ "${{ needs.resolve-options.outputs.preview_debug }}" == "true" ]; then
             PKG="usb-debug"
             echo "Fetching/building DEBUG image..."
           else
@@ -451,7 +567,7 @@ jobs:
 
       - name: Start preview VM with VNC + noVNC + tunnel
         env:
-          PREVIEW_DURATION: ${{ inputs.preview_duration }}
+          PREVIEW_DURATION: ${{ needs.resolve-options.outputs.preview_duration }}
         run: |
           set -euo pipefail
 
