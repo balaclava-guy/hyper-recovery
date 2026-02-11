@@ -115,8 +115,8 @@ in
   systemd.services.hyper-ci-debug = {
     description = "Collect debug info for CI/automated testing";
     wantedBy = [ "multi-user.target" ];
-    after = [ "systemd-journald.service" "network-online.target" ];
-    wants = [ "network-online.target" ];
+    # Do not gate on network-online; it can delay/fail in CI VMs and block startup.
+    after = [ "systemd-journald.service" ];
     
     serviceConfig = {
       Type = "oneshot";
