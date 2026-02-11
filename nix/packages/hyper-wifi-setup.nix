@@ -10,10 +10,10 @@ rustPlatform.buildRustPackage rec {
   pname = "hyper-wifi-setup";
   version = "0.1.0";
 
-  src = ../../hyper-wifi-setup;
+  src = ../../pkgs/hyper-wifi-setup;
 
   cargoLock = {
-    lockFile = ../../hyper-wifi-setup/Cargo.lock;
+    lockFile = ../../pkgs/hyper-wifi-setup/Cargo.lock;
   };
 
   nativeBuildInputs = [

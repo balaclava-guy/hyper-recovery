@@ -3,6 +3,7 @@
 .env.*
 result*
 target/
+/pkgs/hyper-wifi-setup/target/
 **/*.rs.bk
 *.dSYM/
 .wasm-pack-cache/
