@@ -1,5 +1,5 @@
 {
-  description = "Snosu Hyper Recovery Environment";
+  description = "Super Nixos Utilities: Hyper Recovery";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
