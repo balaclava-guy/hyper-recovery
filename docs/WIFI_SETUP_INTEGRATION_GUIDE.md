@@ -110,7 +110,7 @@ if __name__ == "__main__":
 - [ ] Create `scripts/hyper-wifi-setup.py`
 - [ ] Add to `nix/packages/scripts/default.nix`
 - [ ] Create `nix/modules/system/network.nix`
-- [ ] Add to `nix/modules/flake/images.nix`:
+- [ ] Add to `nix/flake/images.nix`:
   ```nix
   modules = [
     self.nixosModules.base
@@ -207,7 +207,7 @@ nmcli device
 | `scripts/hyper-wifi-setup.py` | Main WiFi setup script |
 | `nix/packages/scripts/default.nix` | Package definition |
 | `nix/modules/system/network.nix` | Systemd service definition |
-| `nix/modules/flake/images.nix` | Module import |
+| `nix/flake/images.nix` | Module import |
 
 ## Notes
 

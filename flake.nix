@@ -13,10 +13,10 @@
       systems = [ "x86_64-linux" "aarch64-darwin" ];
       
       imports = [
-        ./nix/modules/flake/packages.nix
-        ./nix/modules/flake/images.nix
-        ./nix/modules/flake/apps.nix
-        ./nix/modules/flake/devshells.nix
+        ./nix/flake/packages.nix
+        ./nix/flake/images.nix
+        ./nix/flake/apps.nix
+        ./nix/flake/devshells.nix
       ];
 
       flake = {

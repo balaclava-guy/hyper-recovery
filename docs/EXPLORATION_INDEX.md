@@ -95,7 +95,7 @@
 - [ ] Set proper dependencies
 
 ### Phase 4: Integrate Module
-- [ ] Update `nix/modules/flake/images.nix`
+- [ ] Update `nix/flake/images.nix`
 - [ ] Add module to both usb-live and usb-live-debug
 - [ ] Export module in flake.nixosModules
 
@@ -244,7 +244,7 @@ cp result/iso/snosu-hyper-recovery-x86_64-linux.iso /path/to/ventoy/
 - Script: `scripts/hyper-wifi-setup.py`
 - Package: `nix/packages/scripts/default.nix`
 - Service: `nix/modules/system/network.nix` (new)
-- Module: `nix/modules/flake/images.nix`
+- Module: `nix/flake/images.nix`
 
 ### ✓ Service Lifecycle
 ```

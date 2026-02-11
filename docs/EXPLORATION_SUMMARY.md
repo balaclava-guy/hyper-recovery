@@ -305,7 +305,7 @@ in
 ```
 
 #### Step 4: Import Module
-**File**: `nix/modules/flake/images.nix`
+**File**: `nix/flake/images.nix`
 
 ```nix
 modules = [
@@ -343,7 +343,7 @@ nmcli device wifi list
 | `nix/modules/system/branding.nix` | Themes | 89 |
 | `nix/modules/system/services.nix` | Cockpit, virtualization | 37 |
 | `nix/modules/system/debug.nix` | Debug services | 111 |
-| `nix/modules/flake/images.nix` | NixOS configs | 129 |
+| `nix/flake/images.nix` | NixOS configs | 129 |
 | `nix/packages/scripts/default.nix` | Script packaging | 83 |
 | `scripts/hyper-debug.py` | Diagnostics | 300+ |
 | `scripts/hyper-hw.py` | Firmware manager | 200+ |
@@ -404,7 +404,7 @@ cp result/iso/snosu-hyper-recovery-x86_64-linux.iso /path/to/ventoy/
 1. **Script**: `scripts/hyper-wifi-setup.py`
 2. **Package**: Add to `nix/packages/scripts/default.nix`
 3. **Service**: Create `nix/modules/system/network.nix`
-4. **Module**: Import in `nix/modules/flake/images.nix`
+4. **Module**: Import in `nix/flake/images.nix`
 5. **Build**: `nix build .#usb`
 
 ### ✓ Service Lifecycle
@@ -436,7 +436,7 @@ nmcli device wifi list
 1. Create `scripts/hyper-wifi-setup.py` with desired functionality
 2. Add to `nix/packages/scripts/default.nix`
 3. Create `nix/modules/system/network.nix`
-4. Update `nix/modules/flake/images.nix` to import network module
+4. Update `nix/flake/images.nix` to import network module
 5. Build: `nix build .#usb`
 6. Test on actual hardware or VM
 

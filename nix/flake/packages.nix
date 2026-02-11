@@ -7,20 +7,20 @@
   perSystem = { pkgs, system, lib, ... }: {
     packages = lib.optionalAttrs pkgs.stdenv.isLinux {
       # Theme packages
-      snosu-plymouth-theme = pkgs.callPackage ../../packages/themes/plymouth.nix {};
-      snosu-grub-theme = pkgs.callPackage ../../packages/themes/grub.nix {};
+      snosu-plymouth-theme = pkgs.callPackage ../packages/themes/plymouth.nix {};
+      snosu-grub-theme = pkgs.callPackage ../packages/themes/grub.nix {};
       
       # Script packages
-      hyper-debug = (pkgs.callPackage ../../packages/scripts {}).hyper-debug;
-      hyper-hw = (pkgs.callPackage ../../packages/scripts {}).hyper-hw;
-      hyper-debug-serial = (pkgs.callPackage ../../packages/scripts {}).hyper-debug-serial;
-      save-boot-logs = (pkgs.callPackage ../../packages/scripts {}).save-boot-logs;
+      hyper-debug = (pkgs.callPackage ../packages/scripts {}).hyper-debug;
+      hyper-hw = (pkgs.callPackage ../packages/scripts {}).hyper-hw;
+      hyper-debug-serial = (pkgs.callPackage ../packages/scripts {}).hyper-debug-serial;
+      save-boot-logs = (pkgs.callPackage ../packages/scripts {}).save-boot-logs;
       
       # Firmware package
-      hyper-firmware-core = (pkgs.callPackage ../../packages/firmware.nix {}).hyperFirmwareCore;
+      hyper-firmware-core = (pkgs.callPackage ../packages/firmware.nix {}).hyperFirmwareCore;
       
       # WiFi setup daemon
-      hyper-wifi-setup = pkgs.callPackage ../../packages/hyper-wifi-setup.nix {};
+      hyper-wifi-setup = pkgs.callPackage ../packages/hyper-wifi-setup.nix {};
     } // {
       # Theme VM (cross-platform)
       theme-vm = pkgs.stdenvNoCC.mkDerivation {
@@ -30,7 +30,7 @@
 
         installPhase = ''
           mkdir -p $out/bin
-          cp ${../../../scripts/theme-vm} $out/bin/theme-vm
+          cp ${../../scripts/theme-vm} $out/bin/theme-vm
           chmod +x $out/bin/theme-vm
 
           substituteInPlace $out/bin/theme-vm \

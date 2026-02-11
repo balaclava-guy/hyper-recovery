@@ -6,14 +6,14 @@
 {
   # Export NixOS modules for reuse
   flake.nixosModules = {
-    base = import ../system/base.nix;
-    hardware = import ../system/hardware.nix;
-    branding = import ../system/branding.nix;
-    services = import ../system/services.nix;
-    debug = import ../system/debug.nix;
-    wifi-setup = import ../system/wifi-setup.nix;
-    iso-base = import ../iso/base.nix;
-    iso-grub-bootloader = import ../iso/grub-bootloader.nix;
+    base = import ../modules/system/base.nix;
+    hardware = import ../modules/system/hardware.nix;
+    branding = import ../modules/system/branding.nix;
+    services = import ../modules/system/services.nix;
+    debug = import ../modules/system/debug.nix;
+    wifi-setup = import ../modules/system/wifi-setup.nix;
+    iso-base = import ../modules/iso/base.nix;
+    iso-grub-bootloader = import ../modules/iso/grub-bootloader.nix;
   };
 
   # Define NixOS configurations at flake level

@@ -181,7 +181,7 @@ pkgs.rustPlatform.buildRustPackage {
 #### Option B: Reference in packages.nix
 
 ```nix
-# nix/modules/flake/packages.nix
+# nix/flake/packages.nix
 {
   perSystem = { pkgs, system, lib, ... }: {
     packages = lib.optionalAttrs pkgs.stdenv.isLinux {
@@ -779,7 +779,7 @@ def show_menu():
 - [ ] Create `scripts/hyper-wifi-setup.py`
 - [ ] Add to `nix/packages/scripts/default.nix`
 - [ ] Create `nix/modules/system/network.nix` (optional)
-- [ ] Add module to `nix/modules/flake/images.nix`
+- [ ] Add module to `nix/flake/images.nix`
 - [ ] Include in `environment.systemPackages` in base.nix
 - [ ] Test with `nix build .#usb`
 - [ ] Verify service starts: `systemctl status hyper-wifi-setup`
@@ -834,7 +834,7 @@ cp result/iso/snosu-hyper-recovery-x86_64-linux.iso /path/to/ventoy/partition/
 | `nix/modules/system/branding.nix` | Plymouth, GRUB, Cockpit themes |
 | `nix/modules/system/services.nix` | Cockpit, virtualization services |
 | `nix/modules/system/debug.nix` | Debug logging, debug services |
-| `nix/modules/flake/images.nix` | NixOS configurations, image builds |
+| `nix/flake/images.nix` | NixOS configurations, image builds |
 | `nix/packages/scripts/default.nix` | Script packaging helper |
 | `scripts/hyper-debug.py` | System diagnostics collector |
 | `scripts/hyper-hw.py` | Hardware/firmware manager |

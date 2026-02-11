@@ -180,7 +180,7 @@
 │  ├─ base.nix              (Common ISO settings)                  │
 │  └─ grub-bootloader.nix   (GRUB configuration)                   │
 │                                                                   │
-│  nix/modules/flake/                                              │
+│  nix/flake/                                              │
 │  ├─ packages.nix          (Package definitions)                  │
 │  ├─ images.nix            (NixOS configurations)                 │
 │  ├─ apps.nix              (CLI apps)                             │
@@ -199,7 +199,7 @@
 │                                                                   │
 │  flake.nix                                                       │
 │    ↓                                                              │
-│  nix/modules/flake/images.nix                                    │
+│  nix/flake/images.nix                                    │
 │    ├─ usb-live (regular)                                         │
 │    └─ usb-live-debug (with debug overlay)                        │
 │    ↓                                                              │
@@ -326,7 +326,7 @@ System Ready
    └─ Wants: network-online.target
 
 4. Module Import
-   nix/modules/flake/images.nix
+   nix/flake/images.nix
    └─ Add: self.nixosModules.network
 
 5. System Packages (optional)
