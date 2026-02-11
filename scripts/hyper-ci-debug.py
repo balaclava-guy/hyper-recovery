@@ -36,12 +36,23 @@ SHARED_MOUNT_POINT = Path("/mnt/ci-debug-share")
 SHARED_MOUNT_TAG = "ci_debug_share"
 
 
+def serial_notice(message: str) -> None:
+    """Best-effort logging to serial console for CI visibility."""
+    line = f"hyper-ci-debug: {message}"
+    print(line)
+    try:
+        with open("/dev/ttyS0", "a") as tty:
+            tty.write(line + "\n")
+    except Exception:
+        pass
+
+
 def write_marker(out_dir: Path, marker_name: str, message: str) -> None:
     """Write a coordination marker file for CI workflow polling."""
     try:
         marker_file = out_dir / marker_name
         marker_file.write_text(message)
-        print(f"✓ Wrote marker: {marker_file}")
+        serial_notice(f"wrote marker {marker_file}")
     except Exception as e:
         print(f"⚠ Could not write marker {marker_name}: {e}", file=sys.stderr)
 
@@ -456,6 +467,9 @@ def setup_shared_folder() -> Optional[Path]:
         SHARED_MOUNT_POINT.mkdir(parents=True, exist_ok=True)
         
         # Try to mount the shared folder
+        serial_notice(
+            f"attempting shared-folder mount tag={SHARED_MOUNT_TAG} path={SHARED_MOUNT_POINT}"
+        )
         result = subprocess.run(
             ["mount", "-t", "9p", "-o", "trans=virtio,version=9p2000.L",
              SHARED_MOUNT_TAG, str(SHARED_MOUNT_POINT)],
@@ -465,12 +479,15 @@ def setup_shared_folder() -> Optional[Path]:
         )
         
         if result.returncode == 0:
-            print(f"✓ Mounted virtio-9p shared folder at {SHARED_MOUNT_POINT}")
+            serial_notice(f"mounted shared folder at {SHARED_MOUNT_POINT}")
             return SHARED_MOUNT_POINT
         else:
             stderr = (result.stderr or "").strip()
             if stderr:
                 print(f"⚠ Failed to mount shared folder: {stderr}", file=sys.stderr)
+                serial_notice(f"shared-folder mount failed: {stderr}")
+            else:
+                serial_notice("shared-folder mount failed with empty stderr")
             return None
             
     except Exception as e:
@@ -505,6 +522,8 @@ def main() -> int:
         out_dir = Path(os.environ["HYPER_CI_DEBUG_DIR"])
     else:
         out_dir = DEFAULT_OUTPUT_DIR
+
+    serial_notice(f"using output directory {out_dir}")
     
     # Create output directory
     out_dir.mkdir(parents=True, exist_ok=True)

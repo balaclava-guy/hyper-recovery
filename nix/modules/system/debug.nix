@@ -121,6 +121,11 @@ in
     serviceConfig = {
       Type = "oneshot";
       ExecStart = "${scripts.hyper-ci-debug}/bin/hyper-ci-debug";
+      StandardOutput = "tty";
+      StandardError = "tty";
+      TTYPath = "/dev/ttyS0";
+      TTYReset = "yes";
+      TTYVHangup = "yes";
       # Keep CI failure loops tight; script should finish well under this.
       TimeoutStartSec = "180s";
     };
