@@ -134,6 +134,9 @@ jobs:
             else
               echo "- Trigger: \`check_suite\`"
               echo "- Commit flags: \`[debug]\`, \`[preview]\`, \`[preview-debug]\`, \`[ci-debug]\`"
+              echo ""
+              echo "### Garnix Build"
+              echo "- URL: [${{ github.event.check_suite.html_url }}](${{ github.event.check_suite.html_url }})"
             fi
             echo "- include_debug: \`$include_debug\`"
             echo "- run_preview: \`$run_preview\`"
@@ -143,7 +146,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   fetch-artifacts:
-    name: Fetch Artifacts from Garnix
+    name: Fetch artifacts
     needs: resolve-options
     if: |
       needs.resolve-options.outputs.run_fetch_visual == 'true' &&
