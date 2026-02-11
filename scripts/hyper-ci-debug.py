@@ -450,6 +450,7 @@ def setup_shared_folder() -> Optional[Path]:
             ["mount", "-t", "9p", "-o", "trans=virtio,version=9p2000.L",
              SHARED_MOUNT_TAG, str(SHARED_MOUNT_POINT)],
             capture_output=True,
+            text=True,
             timeout=10
         )
         
@@ -457,6 +458,9 @@ def setup_shared_folder() -> Optional[Path]:
             print(f"✓ Mounted virtio-9p shared folder at {SHARED_MOUNT_POINT}")
             return SHARED_MOUNT_POINT
         else:
+            stderr = (result.stderr or "").strip()
+            if stderr:
+                print(f"⚠ Failed to mount shared folder: {stderr}", file=sys.stderr)
             return None
             
     except Exception as e:

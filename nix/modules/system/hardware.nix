@@ -40,6 +40,7 @@ in
 
     # Storage / Virtualization (Essential for Recovery Environment)
     "virtio_blk" "virtio_pci" "virtio_scsi"  # QEMU/KVM
+    "9p" "9pnet" "9pnet_virtio"             # QEMU virtio-9p shared folder
     "nvme"        # NVMe drives
     "ahci"        # SATA
     "xhci_pci"    # USB 3.x
@@ -52,7 +53,7 @@ in
   ];
 
   # Ensure virtio_gpu is available for early KMS
-  boot.initrd.availableKernelModules = [ "virtio_gpu" "virtio_pci" ];
+  boot.initrd.availableKernelModules = [ "virtio_gpu" "virtio_pci" "9p" "9pnet_virtio" ];
 
   # Firmware & wireless
   hardware.enableAllFirmware = false;
