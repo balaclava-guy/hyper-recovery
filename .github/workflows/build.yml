@@ -470,6 +470,14 @@ jobs:
               echo "$mode brightness check: PASS"
             fi
 
+            # Wait for hyper-ci-debug service to complete (only in debug builds)
+            # The service runs after multi-user.target and needs time to collect logs
+            # Add a buffer to ensure all logs are captured and written to shared folder
+            if [ "${ENABLE_CI_DEBUG:-false}" = "true" ]; then
+              echo "Waiting for hyper-ci-debug service to complete..."
+              sleep 120
+            fi
+
             # Shutdown QEMU
             printf "system_powerdown\n" | socat - UNIX-CONNECT:"$monitor_socket" || true
             sleep 3
