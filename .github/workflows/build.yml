@@ -17,6 +17,7 @@ on:
         options:
           - standard
           - debug
+          - ci-debug-smoke
           - preview
           - preview-debug
           - preview-only
@@ -38,6 +39,7 @@ jobs:
       include_debug: ${{ steps.resolve.outputs.include_debug }}
       run_preview: ${{ steps.resolve.outputs.run_preview }}
       preview_debug: ${{ steps.resolve.outputs.preview_debug }}
+      ci_debug_smoke: ${{ steps.resolve.outputs.ci_debug_smoke }}
       run_fetch_visual: ${{ steps.resolve.outputs.run_fetch_visual }}
       preview_duration: ${{ steps.resolve.outputs.preview_duration }}
     steps:
@@ -62,6 +64,7 @@ jobs:
           include_debug=false
           run_preview=false
           preview_debug=false
+          ci_debug_smoke=false
           run_fetch_visual=true
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -70,6 +73,10 @@ jobs:
                 ;;
               debug)
                 include_debug=true
+                ;;
+              ci-debug-smoke)
+                include_debug=true
+                ci_debug_smoke=true
                 ;;
               preview)
                 run_preview=true
@@ -122,6 +129,7 @@ jobs:
             echo "include_debug=$include_debug"
             echo "run_preview=$run_preview"
             echo "preview_debug=$preview_debug"
+            echo "ci_debug_smoke=$ci_debug_smoke"
             echo "run_fetch_visual=$run_fetch_visual"
             echo "preview_duration=$PREVIEW_DURATION"
           } >> "$GITHUB_OUTPUT"
@@ -141,6 +149,7 @@ jobs:
             echo "- include_debug: \`$include_debug\`"
             echo "- run_preview: \`$run_preview\`"
             echo "- preview_debug: \`$preview_debug\`"
+            echo "- ci_debug_smoke: \`$ci_debug_smoke\`"
             echo "- run_fetch_visual: \`$run_fetch_visual\`"
             echo "- preview_duration: \`$PREVIEW_DURATION\`"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -304,6 +313,7 @@ jobs:
         shell: bash
         env:
           ENABLE_CI_DEBUG: ${{ needs.resolve-options.outputs.include_debug }}
+          CI_DEBUG_SMOKE: ${{ needs.resolve-options.outputs.ci_debug_smoke }}
         run: |
           set -euo pipefail
 
@@ -334,7 +344,8 @@ jobs:
               local serial_log=$4
               local prefix=$5
               local iso_path=$6
-              shift 6
+              local expect_ci_debug=$7
+              shift 7
               local firmware_args=("$@")
 
               # Create shared directory for CI debug extraction
@@ -470,28 +481,42 @@ jobs:
               echo "$mode brightness check: PASS"
             fi
 
-            # Poll for hyper-ci-debug completion marker (only in debug builds)
-            # The debug service writes .CI_DEBUG_COMPLETE marker when finished
-            # This self-coordinates: VM signals readiness instead of fixed timeout
-            if [ "${ENABLE_CI_DEBUG:-false}" = "true" ]; then
-              echo "Polling for hyper-ci-debug completion marker..."
-              local marker_file="$shared_dir/.CI_DEBUG_COMPLETE"
-              local max_wait=300  # 5 minutes max wait
+            # Poll for hyper-ci-debug markers only for runs that should include it.
+            # This avoids long waits on non-debug VMs and fails faster when startup is broken.
+            if [ "$expect_ci_debug" = "true" ]; then
+              echo "Polling for hyper-ci-debug markers..."
+              local started_file="$shared_dir/.CI_DEBUG_STARTED"
+              local complete_file="$shared_dir/.CI_DEBUG_COMPLETE"
+              local start_wait=90
+              local complete_wait=180
               local waited=0
-              
-              while [ ! -f "$marker_file" ] && [ $waited -lt $max_wait ]; do
+
+              while [ ! -f "$started_file" ] && [ $waited -lt $start_wait ]; do
                 sleep 5
                 waited=$((waited + 5))
-                if [ $((waited % 30)) -eq 0 ]; then
-                  echo "  Still waiting... (${waited}s/${max_wait}s)"
-                fi
               done
-              
-              if [ -f "$marker_file" ]; then
-                echo "✓ CI debug marker found after ${waited}s"
+
+              if [ -f "$started_file" ]; then
+                echo "✓ CI debug start marker found after ${waited}s"
+
+                waited=0
+                while [ ! -f "$complete_file" ] && [ $waited -lt $complete_wait ]; do
+                  sleep 5
+                  waited=$((waited + 5))
+                  if [ $((waited % 30)) -eq 0 ]; then
+                    echo "  Still waiting for completion... (${waited}s/${complete_wait}s)"
+                  fi
+                done
+
+                if [ -f "$complete_file" ]; then
+                  echo "✓ CI debug completion marker found after ${waited}s"
+                else
+                  echo "⚠ CI debug completion marker not found after ${complete_wait}s"
+                  echo "  Check serial log and service status in extracted debug bundle"
+                fi
               else
-                echo "⚠ CI debug marker not found after ${max_wait}s, proceeding anyway"
-                echo "  This may indicate the debug service failed to run"
+                echo "⚠ CI debug start marker not found after ${start_wait}s"
+                echo "  Service likely did not start or shared folder mount failed"
               fi
             fi
 
@@ -510,23 +535,27 @@ jobs:
             fi
           }
 
-          # BIOS boot test (main ISO)
-          run_boot "bios" 1 /tmp/qemu-monitor-bios artifacts/serial-bios.log bios "$ISO_PATH"
-          extract_ci_debug "bios"
+          if [ "${CI_DEBUG_SMOKE:-false}" != "true" ]; then
+            # BIOS boot test (main ISO)
+            run_boot "bios" 1 /tmp/qemu-monitor-bios artifacts/serial-bios.log bios "$ISO_PATH" false
+            extract_ci_debug "bios"
 
-          # EFI boot test (main ISO)
-          EFI_VARS="/tmp/OVMF_VARS.fd"
-          cp "$OVMF_VARS_TEMPLATE" "$EFI_VARS"
-          run_boot "efi" 2 /tmp/qemu-monitor-efi artifacts/serial-efi.log efi "$ISO_PATH" \
-            -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
-            -drive if=pflash,format=raw,file="$EFI_VARS"
-          extract_ci_debug "efi"
+            # EFI boot test (main ISO)
+            EFI_VARS="/tmp/OVMF_VARS.fd"
+            cp "$OVMF_VARS_TEMPLATE" "$EFI_VARS"
+            run_boot "efi" 2 /tmp/qemu-monitor-efi artifacts/serial-efi.log efi "$ISO_PATH" false \
+              -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
+              -drive if=pflash,format=raw,file="$EFI_VARS"
+            extract_ci_debug "efi"
+          else
+            echo "CI debug smoke mode enabled: skipping BIOS and EFI regular ISO boots"
+          fi
 
           # EFI boot test (debug ISO) when available
           if [ -n "${ISO_DEBUG_PATH:-}" ] && [ -f "$ISO_DEBUG_PATH" ]; then
             EFI_VARS_DEBUG="/tmp/OVMF_VARS_DEBUG.fd"
             cp "$OVMF_VARS_TEMPLATE" "$EFI_VARS_DEBUG"
-            run_boot "debug-efi" 3 /tmp/qemu-monitor-debug artifacts/serial-debug-efi.log debug-efi "$ISO_DEBUG_PATH" \
+            run_boot "debug-efi" 3 /tmp/qemu-monitor-debug artifacts/serial-debug-efi.log debug-efi "$ISO_DEBUG_PATH" "${ENABLE_CI_DEBUG:-false}" \
               -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
               -drive if=pflash,format=raw,file="$EFI_VARS_DEBUG"
             extract_ci_debug "debug-efi"
@@ -553,7 +582,7 @@ jobs:
         with:
           name: ci-debug-logs
           path: artifacts/ci-debug/
-          if-no-files-found: warn
+          if-no-files-found: error
 
   preview-vm:
     name: Preview VM

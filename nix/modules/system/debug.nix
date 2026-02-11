@@ -121,8 +121,8 @@ in
     serviceConfig = {
       Type = "oneshot";
       ExecStart = "${scripts.hyper-ci-debug}/bin/hyper-ci-debug";
-      # Safeguard timeout (workflow poll will wait up to 5min for marker)
-      TimeoutStartSec = "300s";
+      # Keep CI failure loops tight; script should finish well under this.
+      TimeoutStartSec = "180s";
     };
   };
 }

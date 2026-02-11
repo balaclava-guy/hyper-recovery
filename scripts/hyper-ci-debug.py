@@ -36,6 +36,16 @@ SHARED_MOUNT_POINT = Path("/mnt/ci-debug-share")
 SHARED_MOUNT_TAG = "ci_debug_share"
 
 
+def write_marker(out_dir: Path, marker_name: str, message: str) -> None:
+    """Write a coordination marker file for CI workflow polling."""
+    try:
+        marker_file = out_dir / marker_name
+        marker_file.write_text(message)
+        print(f"✓ Wrote marker: {marker_file}")
+    except Exception as e:
+        print(f"⚠ Could not write marker {marker_name}: {e}", file=sys.stderr)
+
+
 def run_command(cmd: list[str], output_file: Path, description: str = "") -> None:
     """
     Run a command and save its output to a file.
@@ -498,6 +508,17 @@ def main() -> int:
     
     # Create output directory
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Early start marker for fast CI feedback loop
+    write_marker(
+        out_dir,
+        ".CI_DEBUG_STARTED",
+        (
+            f"Started at: {datetime.now().isoformat()}\n"
+            f"PID: {os.getpid()}\n"
+            f"Output dir: {out_dir}\n"
+        ),
+    )
     
     print(f"Collecting CI debug info to {out_dir} ...\n")
     
@@ -519,11 +540,12 @@ def main() -> int:
     print(f"\n✓ CI debug info collected in: {out_dir}")
     print(f"✓ Summary: {out_dir}/SUMMARY.txt")
     
-    # Write completion marker file for coordination with CI
-    # The workflow will poll for this file to know when to shut down the VM
-    marker_file = out_dir / ".CI_DEBUG_COMPLETE"
-    marker_file.write_text(f"Completed at: {datetime.now().isoformat()}\n")
-    print(f"✓ Wrote completion marker: {marker_file}")
+    # Completion marker for coordination with CI
+    write_marker(
+        out_dir,
+        ".CI_DEBUG_COMPLETE",
+        f"Completed at: {datetime.now().isoformat()}\n",
+    )
     
     return 0
 
