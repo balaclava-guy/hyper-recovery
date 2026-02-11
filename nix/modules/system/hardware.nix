@@ -13,6 +13,11 @@ in
   boot.kernelParams = [
     "quiet"
     "splash"
+    # Keep regular build output quiet during initrd and early boot.
+    "rd.systemd.show_status=false"
+    "systemd.show_status=false"
+    "rd.udev.log_level=3"
+    "udev.log_priority=3"
     "vt.global_cursor_default=0"
     "fbcon=nodefer"
     "plymouth.ignore-serial-consoles"
