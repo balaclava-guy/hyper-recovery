@@ -22,8 +22,6 @@
     usb-live = inputs.nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
       modules = [
-        { nixpkgs.overlays = [ self.overlays.cockpitZfs ]; }
-        
         # Core system modules (clean, no debug)
         self.nixosModules.base
         self.nixosModules.hardware
@@ -54,8 +52,6 @@
     usb-live-debug = inputs.nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
       modules = [
-        { nixpkgs.overlays = [ self.overlays.cockpitZfs ]; }
-        
         # Core system modules (same as regular)
         self.nixosModules.base
         self.nixosModules.hardware

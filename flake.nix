@@ -18,20 +18,5 @@
         ./nix/flake/apps.nix
         ./nix/flake/devshells.nix
       ];
-
-      flake = {
-        # TODO(2026-02-10): Temporary workaround.
-        # Cockpit Python version mismatch causing buildEnv path collision.
-        overlays.cockpitZfs = final: prev: {
-          cockpit = prev.cockpit.overrideAttrs (old: {
-            passthru = (old.passthru or { }) // {
-              cockpitPath =
-                prev.lib.filter
-                  (p: !(prev.lib.hasInfix "python3" (builtins.toString p)))
-                  (old.passthru.cockpitPath or [ ]);
-            };
-          });
-        };
-      };
     };
 }
