@@ -401,7 +401,7 @@ pub async fn connect_to_network(interface: &str, ssid: &str, password: &str) -> 
         let settings = build_connection_settings(ssid, password, specific_ap.as_str() == "/");
         let nm_proxy = zbus::Proxy::new(&connection, NM_DEST, NM_PATH, NM_IFACE).await?;
         let activate_result =
-            activate_connection(&nm_proxy, settings, device_path.clone(), specific_ap).await;
+            activate_connection(&nm_proxy, &settings, device_path.clone(), specific_ap).await;
 
         match activate_result {
             Ok(()) => {
@@ -502,6 +502,7 @@ async fn wait_for_device_activation(
         if state == NM_DEVICE_STATE_FAILED {
             let reason: (u32, u32) = device_proxy
                 .get_property("StateReason")
+                .await
                 .unwrap_or((state, 0));
             anyhow::bail!(
                 "Device activation failed: state={} reason={}",
@@ -657,11 +658,11 @@ async fn find_best_ap_for_ssid(
     Ok(best.map(|(path, _)| path))
 }
 
-fn build_connection_settings(
-    ssid: &str,
-    password: &str,
+fn build_connection_settings<'a>(
+    ssid: &'a str,
+    password: &'a str,
     hidden: bool,
-) -> HashMap<&'static str, HashMap<&'static str, Value>> {
+) -> HashMap<&'static str, HashMap<&'static str, Value<'a>>> {
     let mut conn_settings = HashMap::new();
     conn_settings.insert("type", Value::from("802-11-wireless"));
     conn_settings.insert("id", Value::from(ssid));
@@ -697,9 +698,9 @@ fn build_connection_settings(
     settings
 }
 
-async fn activate_connection(
+async fn activate_connection<'a>(
     nm_proxy: &zbus::Proxy<'_>,
-    settings: HashMap<&'static str, HashMap<&'static str, Value>>,
+    settings: &HashMap<&'static str, HashMap<&'static str, Value<'a>>>,
     device_path: OwnedObjectPath,
     specific_ap: OwnedObjectPath,
 ) -> std::result::Result<(), String> {
@@ -716,12 +717,7 @@ async fn activate_connection(
     > = nm_proxy
         .call(
             "AddAndActivateConnection2",
-            &(
-                settings.clone(),
-                device_path.clone(),
-                specific_ap.clone(),
-                options,
-            ),
+            &(settings, &device_path, &specific_ap, options),
         )
         .await;
 
@@ -734,7 +730,7 @@ async fn activate_connection(
                 nm_proxy
                     .call(
                         "AddAndActivateConnection",
-                        &(settings, device_path, specific_ap),
+                        &(settings, &device_path, &specific_ap),
                     )
                     .await;
             legacy.map(|_| ()).map_err(|e| e.to_string())
