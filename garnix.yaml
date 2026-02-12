@@ -1,9 +1,0 @@
-builds:
-  exclude:
-    - "*.img"
-    - "*.qcow2"
-    - "*.iso"
-  # Keep default Garnix builds regular-only for faster CI.
-  # Debug artifacts can be fetched on demand via workflow_dispatch.
-  include:
-    - packages.x86_64-linux.image-compressed
