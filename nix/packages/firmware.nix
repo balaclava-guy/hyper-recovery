@@ -1,9 +1,52 @@
 { pkgs, lib }:
 
 let
-  inherit (pkgs) stdenv linux-firmware runCommand coreutils findutils;
+  inherit (pkgs) linux-firmware runCommand coreutils findutils;
 
   firmwareSrc = "${linux-firmware}/lib/firmware";
+
+  mkFirmwareSubset = {
+    name,
+    dirs,
+    fileGlobs ? [ ],
+  }:
+    runCommand name {
+      nativeBuildInputs = [ coreutils findutils ];
+    } ''
+      set -euo pipefail
+
+      out_firmware="$out/lib/firmware"
+      mkdir -p "$out_firmware"
+
+      copy_dir() {
+        local d="$1"
+        if [ -d "${firmwareSrc}/$d" ]; then
+          cp -aL "${firmwareSrc}/$d" "$out_firmware/"
+        fi
+      }
+
+      copy_glob() {
+        local pattern="$1"
+        shopt -s nullglob
+        for f in ${firmwareSrc}/$pattern; do
+          if [ -f "$f" ]; then
+            cp -aL "$f" "$out_firmware/"
+          fi
+        done
+      }
+
+      ${lib.concatMapStringsSep "\n" (d: "copy_dir ${lib.escapeShellArg d}") dirs}
+      ${lib.concatMapStringsSep "\n" (g: "copy_glob ${lib.escapeShellArg g}") fileGlobs}
+
+      # Keep Intel BT blobs for laptop combo cards.
+      if [ -d "${firmwareSrc}/intel" ]; then
+        mkdir -p "$out_firmware/intel"
+        shopt -s nullglob
+        for f in "${firmwareSrc}/intel"/ibt-*; do
+          cp -aL "$f" "$out_firmware/intel/"
+        done
+      fi
+    '';
 
   # Keep this list intentionally biased toward recovery:
   # - Common Intel/AMD GPUs (Plymouth/KMS)
@@ -35,41 +78,60 @@ let
     "tg3"
     "rtl_nic"
   ];
+
+  wirelessAllDirs = [
+    "ath3k"
+    "ath6k"
+    "ath9k_htc"
+    "ath10k"
+    "ath11k"
+    "ath12k"
+    "b43"
+    "b43legacy"
+    "brcm"
+    "cypress"
+    "iwlwifi"
+    "libertas"
+    "mediatek"
+    "mt7601u"
+    "mt76"
+    "mwl8k"
+    "mwlwifi"
+    "qca"
+    "rsi_91x"
+    "rtlwifi"
+    "rtw88"
+    "rtw89"
+    "rtl_bt"
+    "ti-connectivity"
+    "wil6210"
+    "wfx"
+    "wl12xx"
+    "wl18xx"
+    "zd1211"
+  ];
+
+  wirelessRootGlobs = [
+    "carl9170-1.fw"
+    "htc_7010.fw"
+    "htc_9271.fw"
+    "iwlwifi-*.ucode"
+    "iwlwifi-*.pnvm"
+    "iwlwifi-*.iml"
+    "iwlwifi-*.bseq"
+    "rt*.bin"
+    "rt*.fw"
+  ];
 in
 {
-  hyper-firmware-core = runCommand "hyper-firmware-core" {
-    # Ensure the builder has basic utils even in restricted environments.
-    nativeBuildInputs = [ coreutils findutils ];
-  } ''
-    set -euo pipefail
+  hyper-firmware-core = mkFirmwareSubset {
+    name = "hyper-firmware-core";
+    dirs = keepDirs;
+  };
 
-    out_firmware="$out/lib/firmware"
-    mkdir -p "$out_firmware"
-
-    copy_dir() {
-      local d="$1"
-      if [ -d "${firmwareSrc}/$d" ]; then
-        # Dereference symlinks so we don't retain references to the full linux-firmware output.
-        cp -aL "${firmwareSrc}/$d" "$out_firmware/"
-      fi
-    }
-
-    # Copy whitelisted directories (if present in this linux-firmware version).
-    ${lib.concatMapStringsSep "\n" (d: "copy_dir ${lib.escapeShellArg d}") keepDirs}
-
-    # Intel Bluetooth firmware: keep only ibt-* (avoid pulling unrelated intel blobs).
-    if [ -d "${firmwareSrc}/intel" ]; then
-      mkdir -p "$out_firmware/intel"
-      shopt -s nullglob
-      for f in "${firmwareSrc}/intel"/ibt-*; do
-        cp -aL "$f" "$out_firmware/intel/"
-      done
-    fi
-
-    # Sanity check: ensure we didn't accidentally include the entire linux-firmware tree.
-    # (This is a soft check; it doesn't fail builds, but helps catch obvious mistakes.)
-    if [ -d "$out_firmware/iwlwifi" ] || [ -d "$out_firmware/i915" ]; then
-      : # expected
-    fi
-  '';
+  hyper-firmware-wireless-all = mkFirmwareSubset {
+    name = "hyper-firmware-wireless-all";
+    dirs = wirelessAllDirs;
+    fileGlobs = wirelessRootGlobs;
+  };
 }
