@@ -18,7 +18,7 @@ const AP_IP_CANDIDATES: [&str; 5] = [
     "192.168.88.1",
     "10.123.0.1",
 ];
-const NMCLI_SEPARATOR: &str = "|";
+const NMCLI_SEPARATOR: char = ':';
 
 #[derive(Debug, Clone)]
 struct WirelessInterface {
@@ -332,14 +332,10 @@ pub async fn scan_networks(interface: &str) -> Result<Vec<NetworkInfo>> {
     tracing::info!(interface = %interface, "Scanning for WiFi networks");
 
     // Use nmcli for simplicity - it handles the async scan properly.
-    // Use a custom field separator to avoid splitting BSSID colons.
+    // Keep flags conservative for compatibility with older nmcli versions.
     let output = tokio::process::Command::new("nmcli")
         .args([
             "-t",
-            "--escape",
-            "yes",
-            "--separator",
-            NMCLI_SEPARATOR,
             "-f",
             "SSID,BSSID,SIGNAL,FREQ,CHAN,SECURITY",
             "device",
@@ -364,7 +360,7 @@ pub async fn scan_networks(interface: &str) -> Result<Vec<NetworkInfo>> {
     let mut seen_ssids = std::collections::HashSet::new();
 
     for line in stdout.lines() {
-        let fields = split_escaped_fields(line, NMCLI_SEPARATOR.chars().next().unwrap());
+        let fields = split_escaped_fields(line, NMCLI_SEPARATOR);
         if fields.len() >= 6 {
             let ssid = fields[0].clone();
 
