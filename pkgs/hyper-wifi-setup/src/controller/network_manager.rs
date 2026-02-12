@@ -8,7 +8,7 @@ use std::net::Ipv4Addr;
 use std::path::Path;
 use std::process::Command;
 use zbus::Connection;
-use zvariant::Value;
+use zvariant::{OwnedObjectPath, Value};
 
 const DEFAULT_AP_IP: &str = "192.168.42.1";
 const AP_IP_CANDIDATES: [&str; 5] = [
@@ -18,7 +18,16 @@ const AP_IP_CANDIDATES: [&str; 5] = [
     "192.168.88.1",
     "10.123.0.1",
 ];
-const NMCLI_SEPARATOR: char = ':';
+const NM_DEST: &str = "org.freedesktop.NetworkManager";
+const NM_PATH: &str = "/org/freedesktop/NetworkManager";
+const NM_IFACE: &str = "org.freedesktop.NetworkManager";
+const NM_DEVICE_IFACE: &str = "org.freedesktop.NetworkManager.Device";
+const NM_WIFI_DEVICE_IFACE: &str = "org.freedesktop.NetworkManager.Device.Wireless";
+const NM_AP_IFACE: &str = "org.freedesktop.NetworkManager.AccessPoint";
+const NM_DEVICE_TYPE_WIFI: u32 = 2;
+const NM_DEVICE_STATE_ACTIVATED: u32 = 100;
+const NM_DEVICE_STATE_FAILED: u32 = 120;
+const NM_80211_AP_FLAGS_PRIVACY: u32 = 0x1;
 
 #[derive(Debug, Clone)]
 struct WirelessInterface {
@@ -290,13 +299,7 @@ fn detect_unbound_pci_wifi_devices() -> Vec<String> {
 pub async fn check_connectivity() -> Result<bool> {
     let connection = Connection::system().await?;
 
-    let proxy = zbus::Proxy::new(
-        &connection,
-        "org.freedesktop.NetworkManager",
-        "/org/freedesktop/NetworkManager",
-        "org.freedesktop.NetworkManager",
-    )
-    .await?;
+    let proxy = zbus::Proxy::new(&connection, NM_DEST, NM_PATH, NM_IFACE).await?;
 
     // NM_CONNECTIVITY_FULL = 4
     let connectivity: u32 = proxy.get_property("Connectivity").await?;
@@ -309,13 +312,7 @@ pub async fn wait_for_connectivity() -> Result<()> {
     let connection = Connection::system().await?;
 
     loop {
-        let proxy = zbus::Proxy::new(
-            &connection,
-            "org.freedesktop.NetworkManager",
-            "/org/freedesktop/NetworkManager",
-            "org.freedesktop.NetworkManager",
-        )
-        .await?;
+        let proxy = zbus::Proxy::new(&connection, NM_DEST, NM_PATH, NM_IFACE).await?;
 
         let connectivity: u32 = proxy.get_property("Connectivity").await?;
 
@@ -331,73 +328,30 @@ pub async fn wait_for_connectivity() -> Result<()> {
 pub async fn scan_networks(interface: &str) -> Result<Vec<NetworkInfo>> {
     tracing::info!(interface = %interface, "Scanning for WiFi networks");
 
-    // Use nmcli for simplicity - it handles the async scan properly.
-    // Keep flags conservative for compatibility with older nmcli versions.
-    let output = tokio::process::Command::new("nmcli")
-        .args([
-            "-t",
-            "-f",
-            "SSID,BSSID,SIGNAL,FREQ,CHAN,SECURITY",
-            "device",
-            "wifi",
-            "list",
-            "ifname",
-            interface,
-            "--rescan",
-            "yes",
-        ])
-        .output()
-        .await
-        .context("Failed to run nmcli")?;
+    let connection = Connection::system().await?;
+    let device_path = get_wifi_device_path(&connection, interface).await?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("nmcli failed: {}", stderr);
+    request_scan_and_wait(&connection, &device_path).await;
+
+    let ap_paths = get_access_points(&connection, &device_path).await?;
+    let mut by_ssid = HashMap::<String, NetworkInfo>::new();
+
+    for ap_path in ap_paths {
+        let Some(network) = read_access_point(&connection, &ap_path).await? else {
+            continue;
+        };
+
+        by_ssid
+            .entry(network.ssid.clone())
+            .and_modify(|existing| {
+                if network.signal_strength > existing.signal_strength {
+                    *existing = network.clone();
+                }
+            })
+            .or_insert(network);
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut networks = Vec::new();
-    let mut seen_ssids = std::collections::HashSet::new();
-
-    for line in stdout.lines() {
-        let fields = split_escaped_fields(line, NMCLI_SEPARATOR);
-        if fields.len() >= 6 {
-            let ssid = fields[0].clone();
-
-            // Skip empty SSIDs and duplicates
-            if ssid.is_empty() || seen_ssids.contains(&ssid) {
-                continue;
-            }
-            seen_ssids.insert(ssid.clone());
-
-            let signal: u8 = fields[2].parse().unwrap_or(0);
-            let freq: u32 = fields[3]
-                .split_whitespace()
-                .next()
-                .unwrap_or("0")
-                .parse()
-                .unwrap_or(0);
-            let channel: u8 = fields[4].parse().unwrap_or(0);
-            let security = fields[5].clone();
-            let is_secured = !security.is_empty() && security != "--";
-
-            networks.push(NetworkInfo {
-                ssid,
-                bssid: fields[1].clone(),
-                signal_strength: signal,
-                frequency: freq,
-                channel,
-                is_secured,
-                security_type: if is_secured {
-                    security
-                } else {
-                    "Open".to_string()
-                },
-            });
-        }
-    }
-
-    // Sort by signal strength (strongest first)
+    let mut networks: Vec<_> = by_ssid.into_values().collect();
     networks.sort_by(|a, b| b.signal_strength.cmp(&a.signal_strength));
 
     tracing::info!(count = networks.len(), "Found WiFi networks");
@@ -407,12 +361,14 @@ pub async fn scan_networks(interface: &str) -> Result<Vec<NetworkInfo>> {
 /// Connect to a WiFi network
 pub async fn connect_to_network(interface: &str, ssid: &str, password: &str) -> Result<()> {
     tracing::info!(interface = %interface, ssid = %ssid, "Connecting to WiFi network");
+    let connection = Connection::system().await?;
+    let device_path = get_wifi_device_path(&connection, interface).await?;
+    let device_proxy =
+        zbus::Proxy::new(&connection, NM_DEST, device_path.as_str(), NM_DEVICE_IFACE).await?;
 
-    // First, ensure the interface is managed by NetworkManager
-    let _ = tokio::process::Command::new("nmcli")
-        .args(["device", "set", interface, "managed", "yes"])
-        .output()
-        .await;
+    let _ = device_proxy.set_property("Managed", &true).await;
+    let _ = device_proxy.set_property("Autoconnect", &true).await;
+    let _ = device_proxy.call::<_, _, ()>("Disconnect", &()).await;
 
     // Clear AP addressing leftovers before returning interface to client mode.
     let _ = tokio::process::Command::new("ip")
@@ -428,85 +384,50 @@ pub async fn connect_to_network(interface: &str, ssid: &str, password: &str) -> 
     let mut last_error = String::new();
 
     for attempt in 1..=max_attempts {
-        tracing::info!(attempt, max_attempts, ssid = %ssid, "Attempting WiFi connection");
+        tracing::info!(attempt, max_attempts, ssid = %ssid, "Activating WiFi connection via D-Bus");
+        request_scan_and_wait(&connection, &device_path).await;
 
-        let _ = tokio::process::Command::new("nmcli")
-            .args(["device", "wifi", "rescan", "ifname", interface])
-            .output()
-            .await;
-
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-
-        let mut command = tokio::process::Command::new("nmcli");
-        command.args([
-            "--wait", "20", "device", "wifi", "connect", ssid, "ifname", interface,
-        ]);
-        if !password.is_empty() {
-            command.args(["password", password]);
-        }
-
-        let output = command
-            .output()
-            .await
-            .context("Failed to run nmcli connect")?;
-
-        if output.status.success() {
-            wait_for_interface_connection(interface, std::time::Duration::from_secs(30)).await?;
-            tracing::info!("Successfully connected to WiFi network");
-            return Ok(());
-        }
-
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        last_error = format!("{} {}", stdout.trim(), stderr.trim())
-            .trim()
-            .to_string();
-
-        if last_error.contains("No network with SSID") {
-            tracing::warn!(
-                ssid = %ssid,
-                interface = %interface,
-                "SSID not visible in scan cache; retrying with hidden=yes"
-            );
-
-            let mut hidden_connect = tokio::process::Command::new("nmcli");
-            hidden_connect.args([
-                "--wait", "20", "device", "wifi", "connect", ssid, "ifname", interface, "hidden",
-                "yes",
-            ]);
-            if !password.is_empty() {
-                hidden_connect.args(["password", password]);
+        let specific_ap = match find_best_ap_for_ssid(&connection, &device_path, ssid).await? {
+            Some(path) => path,
+            None => {
+                let any = OwnedObjectPath::try_from("/")
+                    .context("Failed to create root object path for activation")?;
+                last_error = format!("SSID '{}' not found in current scan results", ssid);
+                tracing::warn!(attempt, max_attempts, ssid = %ssid, "SSID not in scan list, trying hidden profile activation");
+                any
             }
+        };
 
-            let hidden_output = hidden_connect
-                .output()
-                .await
-                .context("Failed to run nmcli hidden connect")?;
+        let settings = build_connection_settings(ssid, password, specific_ap.as_str() == "/");
+        let nm_proxy = zbus::Proxy::new(&connection, NM_DEST, NM_PATH, NM_IFACE).await?;
+        let activate_result =
+            activate_connection(&nm_proxy, settings, device_path.clone(), specific_ap).await;
 
-            if hidden_output.status.success() {
-                wait_for_interface_connection(interface, std::time::Duration::from_secs(30))
-                    .await?;
-                tracing::info!("Successfully connected to WiFi network via hidden retry");
+        match activate_result {
+            Ok(()) => {
+                wait_for_device_activation(
+                    &connection,
+                    &device_path,
+                    std::time::Duration::from_secs(35),
+                )
+                .await?;
+                tracing::info!("Successfully connected to WiFi network");
                 return Ok(());
             }
-
-            let hidden_stderr = String::from_utf8_lossy(&hidden_output.stderr);
-            let hidden_stdout = String::from_utf8_lossy(&hidden_output.stdout);
-            last_error = format!("{} {}", hidden_stdout.trim(), hidden_stderr.trim())
-                .trim()
-                .to_string();
+            Err(e) => {
+                last_error = e;
+                tracing::warn!(
+                    attempt,
+                    max_attempts,
+                    ssid = %ssid,
+                    error = %last_error,
+                    "WiFi connection attempt failed"
+                );
+            }
         }
 
-        tracing::warn!(
-            attempt,
-            max_attempts,
-            ssid = %ssid,
-            error = %last_error,
-            "WiFi connection attempt failed"
-        );
-
         if attempt < max_attempts {
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
         }
     }
 
@@ -564,80 +485,285 @@ pub async fn create_wifi_connection_dbus(ssid: &str, password: &str) -> Result<S
     Ok(path.to_string())
 }
 
-fn split_escaped_fields(line: &str, separator: char) -> Vec<String> {
-    let mut fields = Vec::new();
-    let mut current = String::new();
-    let mut escaped = false;
-
-    for ch in line.chars() {
-        if escaped {
-            current.push(ch);
-            escaped = false;
-            continue;
-        }
-
-        if ch == '\\' {
-            escaped = true;
-            continue;
-        }
-
-        if ch == separator {
-            fields.push(current);
-            current = String::new();
-            continue;
-        }
-
-        current.push(ch);
-    }
-
-    if escaped {
-        current.push('\\');
-    }
-    fields.push(current);
-
-    fields
-}
-
-async fn wait_for_interface_connection(
-    interface: &str,
+async fn wait_for_device_activation(
+    connection: &Connection,
+    device_path: &OwnedObjectPath,
     timeout: std::time::Duration,
 ) -> Result<()> {
     let deadline = std::time::Instant::now() + timeout;
+    let device_proxy =
+        zbus::Proxy::new(connection, NM_DEST, device_path.as_str(), NM_DEVICE_IFACE).await?;
 
     loop {
-        let output = tokio::process::Command::new("nmcli")
-            .args(["-t", "-f", "GENERAL.STATE", "device", "show", interface])
-            .output()
-            .await
-            .context("Failed to check interface state")?;
-
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            if stdout.contains("GENERAL.STATE:100") {
-                return Ok(());
-            }
+        let state: u32 = device_proxy.get_property("State").await?;
+        if state == NM_DEVICE_STATE_ACTIVATED {
+            return Ok(());
+        }
+        if state == NM_DEVICE_STATE_FAILED {
+            let reason: (u32, u32) = device_proxy
+                .get_property("StateReason")
+                .unwrap_or((state, 0));
+            anyhow::bail!(
+                "Device activation failed: state={} reason={}",
+                reason.0,
+                reason.1
+            );
         }
 
         if std::time::Instant::now() >= deadline {
-            anyhow::bail!("Connection timed out waiting for interface to become connected");
+            anyhow::bail!(
+                "Connection timed out waiting for device activation (state={})",
+                state
+            );
         }
 
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::split_escaped_fields;
+async fn get_wifi_device_path(connection: &Connection, interface: &str) -> Result<OwnedObjectPath> {
+    let nm_proxy = zbus::Proxy::new(connection, NM_DEST, NM_PATH, NM_IFACE).await?;
+    let device_path: OwnedObjectPath = nm_proxy
+        .call("GetDeviceByIpIface", &(interface,))
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to resolve NetworkManager device for '{}'",
+                interface
+            )
+        })?;
 
-    #[test]
-    fn splits_nmcli_line_with_escaped_separator() {
-        let line = "My\\|SSID|76\\:d1\\:a9\\:a1\\:32\\:d1|88|2412|1|WPA2";
-        let fields = split_escaped_fields(line, '|');
+    let device_proxy =
+        zbus::Proxy::new(connection, NM_DEST, device_path.as_str(), NM_DEVICE_IFACE).await?;
+    let device_type: u32 = device_proxy.get_property("DeviceType").await?;
+    if device_type != NM_DEVICE_TYPE_WIFI {
+        anyhow::bail!(
+            "Interface '{}' is not a WiFi device according to NetworkManager (type={})",
+            interface,
+            device_type
+        );
+    }
 
-        assert_eq!(fields.len(), 6);
-        assert_eq!(fields[0], "My|SSID");
-        assert_eq!(fields[1], "76:d1:a9:a1:32:d1");
-        assert_eq!(fields[2], "88");
+    Ok(device_path)
+}
+
+async fn request_scan_and_wait(connection: &Connection, device_path: &OwnedObjectPath) {
+    let Ok(wifi_proxy) = zbus::Proxy::new(
+        connection,
+        NM_DEST,
+        device_path.as_str(),
+        NM_WIFI_DEVICE_IFACE,
+    )
+    .await
+    else {
+        return;
+    };
+
+    let last_scan_before: i64 = wifi_proxy.get_property("LastScan").await.unwrap_or(-1);
+
+    let options = HashMap::<&str, Value>::new();
+    let _ = wifi_proxy
+        .call::<_, _, ()>("RequestScan", &(options,))
+        .await;
+
+    let scan_deadline = std::time::Instant::now() + std::time::Duration::from_secs(6);
+    while std::time::Instant::now() < scan_deadline {
+        let last_scan_now: i64 = wifi_proxy.get_property("LastScan").await.unwrap_or(-1);
+        if last_scan_now > last_scan_before {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    }
+}
+
+async fn get_access_points(
+    connection: &Connection,
+    device_path: &OwnedObjectPath,
+) -> Result<Vec<OwnedObjectPath>> {
+    let wifi_proxy = zbus::Proxy::new(
+        connection,
+        NM_DEST,
+        device_path.as_str(),
+        NM_WIFI_DEVICE_IFACE,
+    )
+    .await?;
+
+    let ap_paths: Vec<OwnedObjectPath> = wifi_proxy.call("GetAllAccessPoints", &()).await?;
+    Ok(ap_paths)
+}
+
+async fn read_access_point(
+    connection: &Connection,
+    ap_path: &OwnedObjectPath,
+) -> Result<Option<NetworkInfo>> {
+    let ap_proxy = zbus::Proxy::new(connection, NM_DEST, ap_path.as_str(), NM_AP_IFACE).await?;
+
+    let ssid_raw: Vec<u8> = ap_proxy.get_property("Ssid").await?;
+    if ssid_raw.is_empty() {
+        return Ok(None);
+    }
+
+    let ssid = String::from_utf8_lossy(&ssid_raw).to_string();
+    if ssid.is_empty() {
+        return Ok(None);
+    }
+
+    let bssid: String = ap_proxy.get_property("HwAddress").await.unwrap_or_default();
+    let signal_strength: u8 = ap_proxy.get_property("Strength").await.unwrap_or(0);
+    let frequency: u32 = ap_proxy.get_property("Frequency").await.unwrap_or(0);
+    let flags: u32 = ap_proxy.get_property("Flags").await.unwrap_or(0);
+    let wpa_flags: u32 = ap_proxy.get_property("WpaFlags").await.unwrap_or(0);
+    let rsn_flags: u32 = ap_proxy.get_property("RsnFlags").await.unwrap_or(0);
+    let is_secured = (flags & NM_80211_AP_FLAGS_PRIVACY) != 0 || wpa_flags != 0 || rsn_flags != 0;
+
+    Ok(Some(NetworkInfo {
+        ssid,
+        bssid,
+        signal_strength,
+        frequency,
+        channel: frequency_to_channel(frequency),
+        is_secured,
+        security_type: classify_security(flags, wpa_flags, rsn_flags),
+    }))
+}
+
+async fn find_best_ap_for_ssid(
+    connection: &Connection,
+    device_path: &OwnedObjectPath,
+    ssid: &str,
+) -> Result<Option<OwnedObjectPath>> {
+    let ap_paths = get_access_points(connection, device_path).await?;
+    let mut best: Option<(OwnedObjectPath, u8)> = None;
+
+    for ap_path in ap_paths {
+        let ap_proxy = zbus::Proxy::new(connection, NM_DEST, ap_path.as_str(), NM_AP_IFACE).await?;
+        let ssid_raw: Vec<u8> = ap_proxy.get_property("Ssid").await.unwrap_or_default();
+        if ssid_raw.is_empty() {
+            continue;
+        }
+
+        let candidate_ssid = String::from_utf8_lossy(&ssid_raw).to_string();
+        if candidate_ssid != ssid {
+            continue;
+        }
+
+        let strength: u8 = ap_proxy.get_property("Strength").await.unwrap_or(0);
+        match &best {
+            Some((_, best_strength)) if *best_strength >= strength => {}
+            _ => best = Some((ap_path, strength)),
+        }
+    }
+
+    Ok(best.map(|(path, _)| path))
+}
+
+fn build_connection_settings(
+    ssid: &str,
+    password: &str,
+    hidden: bool,
+) -> HashMap<&'static str, HashMap<&'static str, Value>> {
+    let mut conn_settings = HashMap::new();
+    conn_settings.insert("type", Value::from("802-11-wireless"));
+    conn_settings.insert("id", Value::from(ssid));
+    conn_settings.insert("uuid", Value::from(uuid::Uuid::new_v4().to_string()));
+    conn_settings.insert("autoconnect", Value::from(false));
+
+    let mut wifi_settings = HashMap::new();
+    wifi_settings.insert("ssid", Value::from(ssid.as_bytes().to_vec()));
+    wifi_settings.insert("mode", Value::from("infrastructure"));
+    if hidden {
+        wifi_settings.insert("hidden", Value::from(true));
+    }
+
+    let mut ipv4_settings = HashMap::new();
+    ipv4_settings.insert("method", Value::from("auto"));
+
+    let mut ipv6_settings = HashMap::new();
+    ipv6_settings.insert("method", Value::from("auto"));
+
+    let mut settings = HashMap::new();
+    settings.insert("connection", conn_settings);
+    settings.insert("802-11-wireless", wifi_settings);
+    settings.insert("ipv4", ipv4_settings);
+    settings.insert("ipv6", ipv6_settings);
+
+    if !password.is_empty() {
+        let mut security_settings = HashMap::new();
+        security_settings.insert("key-mgmt", Value::from("wpa-psk"));
+        security_settings.insert("psk", Value::from(password));
+        settings.insert("802-11-wireless-security", security_settings);
+    }
+
+    settings
+}
+
+async fn activate_connection(
+    nm_proxy: &zbus::Proxy<'_>,
+    settings: HashMap<&'static str, HashMap<&'static str, Value>>,
+    device_path: OwnedObjectPath,
+    specific_ap: OwnedObjectPath,
+) -> std::result::Result<(), String> {
+    let mut options: HashMap<&str, Value> = HashMap::new();
+    options.insert("persist", Value::from("volatile"));
+
+    let v2_result: std::result::Result<
+        (
+            OwnedObjectPath,
+            OwnedObjectPath,
+            HashMap<String, zvariant::OwnedValue>,
+        ),
+        zbus::Error,
+    > = nm_proxy
+        .call(
+            "AddAndActivateConnection2",
+            &(
+                settings.clone(),
+                device_path.clone(),
+                specific_ap.clone(),
+                options,
+            ),
+        )
+        .await;
+
+    match v2_result {
+        Ok(_) => Ok(()),
+        Err(zbus::Error::MethodError(name, _, _))
+            if name.as_str() == "org.freedesktop.DBus.Error.UnknownMethod" =>
+        {
+            let legacy: std::result::Result<(OwnedObjectPath, OwnedObjectPath), zbus::Error> =
+                nm_proxy
+                    .call(
+                        "AddAndActivateConnection",
+                        &(settings, device_path, specific_ap),
+                    )
+                    .await;
+            legacy.map(|_| ()).map_err(|e| e.to_string())
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+fn classify_security(flags: u32, wpa_flags: u32, rsn_flags: u32) -> String {
+    if rsn_flags != 0 && wpa_flags != 0 {
+        return "WPA/WPA2".to_string();
+    }
+    if rsn_flags != 0 {
+        return "WPA2/WPA3".to_string();
+    }
+    if wpa_flags != 0 {
+        return "WPA".to_string();
+    }
+    if (flags & NM_80211_AP_FLAGS_PRIVACY) != 0 {
+        return "WEP/Protected".to_string();
+    }
+    "Open".to_string()
+}
+
+fn frequency_to_channel(freq: u32) -> u8 {
+    match freq {
+        2412..=2472 => ((freq - 2407) / 5) as u8,
+        2484 => 14,
+        5000..=5900 => ((freq - 5000) / 5) as u8,
+        _ => 0,
     }
 }

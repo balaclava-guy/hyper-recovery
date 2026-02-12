@@ -5,6 +5,7 @@ use std::net::Ipv4Addr;
 use std::process::Stdio;
 use tokio::process::{Child, Command};
 use tokio::sync::{Mutex, OnceCell};
+use zbus::Connection;
 
 // Global handles for cleanup
 static HOSTAPD_HANDLE: OnceCell<Mutex<Option<Child>>> = OnceCell::const_new();
@@ -12,6 +13,10 @@ static DNSMASQ_HANDLE: OnceCell<Mutex<Option<Child>>> = OnceCell::const_new();
 const RUNTIME_DIR: &str = "/run/hyper-wifi-setup";
 const HOSTAPD_CONF_PATH: &str = "/run/hyper-wifi-setup/hyper-hostapd.conf";
 const DNSMASQ_CONF_PATH: &str = "/run/hyper-wifi-setup/hyper-dnsmasq.conf";
+const NM_DEST: &str = "org.freedesktop.NetworkManager";
+const NM_PATH: &str = "/org/freedesktop/NetworkManager";
+const NM_IFACE: &str = "org.freedesktop.NetworkManager";
+const NM_DEVICE_IFACE: &str = "org.freedesktop.NetworkManager.Device";
 
 /// Start the WiFi access point
 pub async fn start_ap(interface: &str, ssid: &str, ap_ip: &str) -> Result<()> {
@@ -22,11 +27,7 @@ pub async fn start_ap(interface: &str, ssid: &str, ap_ip: &str) -> Result<()> {
         "Starting access point"
     );
 
-    // Ensure interface is not managed by NetworkManager
-    let _ = Command::new("nmcli")
-        .args(["device", "set", interface, "managed", "no"])
-        .output()
-        .await;
+    prepare_device_for_ap(interface).await;
 
     // Bring interface down, set mode, bring up
     let _ = Command::new("ip")
@@ -202,4 +203,27 @@ pub async fn stop_ap() -> Result<()> {
 
     tracing::info!("Access point stopped");
     Ok(())
+}
+
+async fn prepare_device_for_ap(interface: &str) {
+    let Ok(connection) = Connection::system().await else {
+        return;
+    };
+    let Ok(nm_proxy) = zbus::Proxy::new(&connection, NM_DEST, NM_PATH, NM_IFACE).await else {
+        return;
+    };
+    let Ok(device_path) = nm_proxy
+        .call::<_, _, zvariant::OwnedObjectPath>("GetDeviceByIpIface", &(interface,))
+        .await
+    else {
+        return;
+    };
+    let Ok(device_proxy) =
+        zbus::Proxy::new(&connection, NM_DEST, device_path.as_str(), NM_DEVICE_IFACE).await
+    else {
+        return;
+    };
+
+    let _ = device_proxy.set_property("Autoconnect", &false).await;
+    let _ = device_proxy.call::<_, _, ()>("Disconnect", &()).await;
 }
