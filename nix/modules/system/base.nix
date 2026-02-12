@@ -52,7 +52,8 @@ in
   users.users.snosu = {
     isNormalUser = true;
     password = "nixos";
-    extraGroups = [ "wheel" ];
+    # Allow Cockpit/libvirt access without root
+    extraGroups = [ "wheel" "libvirtd" "kvm" ];
   };
 
   # SSH

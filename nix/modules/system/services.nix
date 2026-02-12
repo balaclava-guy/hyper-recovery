@@ -30,7 +30,8 @@
     openFirewall = true;
     # Allow access from dynamic LAN IP/hostnames used by recovery images.
     allowed-origins = [ "*" ];
-    plugins = with pkgs; [
+    # Cockpit plugins to ship with the web UI
+    packages = with pkgs; [
       cockpit-machines
       cockpit-zfs
       cockpit-files

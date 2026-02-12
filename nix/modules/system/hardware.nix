@@ -33,10 +33,13 @@ in
   boot.initrd.kernelModules = [ 
     # Graphics
     "i915" "amdgpu" "nouveau" "radeon" "virtio_gpu"
-    
+
     # Device-mapper (LVM / LVM-thin; needed for Proxmox "pve" VG thin-pools)
     "dm_mod"
     "dm_thin_pool"
+    "dm_persistent_data"
+    "dm_bio_prison"
+    "dm_bufio"
 
     # Storage / Virtualization (Essential for Recovery Environment)
     "virtio_blk" "virtio_pci" "virtio_scsi"  # QEMU/KVM
@@ -53,7 +56,7 @@ in
   ];
 
   # Ensure virtio_gpu is available for early KMS
-  boot.initrd.availableKernelModules = [ "virtio_gpu" "virtio_pci" "9p" "9pnet_virtio" ];
+  boot.initrd.availableKernelModules = [ "virtio_gpu" "virtio_pci" "9p" "9pnet_virtio" "dm_thin_pool" "dm_persistent_data" "dm_bio_prison" "dm_bufio" ];
 
   # Firmware & wireless
   # Include all wireless firmware families without pulling the full firmware set.
