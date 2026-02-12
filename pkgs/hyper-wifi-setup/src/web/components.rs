@@ -11,6 +11,8 @@ use leptos_shadcn_input::Input;
 const PORTAL_BEHAVIOR_JS: &str = r#"
 (function () {
   var selectedSsid = '';
+  var pollTimer = null;
+  var connectInProgress = false;
 
   function byId(id) {
     return document.getElementById(id);
@@ -31,6 +33,28 @@ const PORTAL_BEHAVIOR_JS: &str = r#"
     return 'waiting';
   }
 
+  function statusTextForSnapshot(data) {
+    if (!data || !data.status) return 'Preparing WiFi setup';
+    if (data.status === 'Connected') return 'Connected to ' + (data.connected_ssid || 'network');
+    if (data.status === 'Connecting') return 'Connecting to ' + (data.connecting_to || 'network') + '...';
+    if (data.status === 'Failed') return 'Connection failed';
+    if (data.status === 'Scanning') return 'Scanning for nearby networks';
+    if (data.status === 'AwaitingCredentials') return 'Select a network to connect';
+    if (data.status === 'Disconnected') return 'Disconnected from WiFi';
+    return 'Preparing WiFi setup';
+  }
+
+  function statusDetailForSnapshot(data) {
+    if (!data || !data.status) return 'Waiting for wireless interfaces to become ready.';
+    if (data.status === 'Connected') return 'Connection is active. You can close this page now.';
+    if (data.status === 'Connecting') return 'Authentication and DHCP are still in progress.';
+    if (data.status === 'Failed') return data.last_error || 'Unknown error while connecting.';
+    if (data.status === 'Scanning') return 'Searching for available access points...';
+    if (data.status === 'AwaitingCredentials') return 'Choose a network or enter credentials manually.';
+    if (data.status === 'Disconnected') return 'No active WiFi connection was detected.';
+    return 'Waiting for wireless interfaces to become ready.';
+  }
+
   function updateStatus(text, tone, detail) {
     var status = byId('status');
     var title = byId('status-text');
@@ -43,8 +67,34 @@ const PORTAL_BEHAVIOR_JS: &str = r#"
     }
   }
 
+  function updateStatusFromSnapshot(data) {
+    updateStatus(
+      statusTextForSnapshot(data),
+      statusToneForState(data && data.status),
+      statusDetailForSnapshot(data)
+    );
+  }
+
+  function clearPoll() {
+    if (pollTimer) {
+      clearTimeout(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function schedulePoll(delayMs) {
+    clearPoll();
+    pollTimer = setTimeout(pollStatus, delayMs);
+  }
+
   async function connect(ssid, password, save) {
-    updateStatus('Connecting to ' + ssid + '...', 'connecting', 'Attempting to join selected network.');
+    connectInProgress = true;
+    updateStatus(
+      'Connecting to ' + ssid + '...',
+      'connecting',
+      'Applying credentials and starting authentication...'
+    );
+    schedulePoll(250);
 
     try {
       var response = await fetch('/api/connect', {
@@ -56,38 +106,56 @@ const PORTAL_BEHAVIOR_JS: &str = r#"
       var data = await response.json();
 
       if (data.success) {
-        updateStatus(data.message, 'connecting', 'Waiting for connection result...');
-        pollStatus();
+        updateStatus('Connection requested', 'connecting', data.message || 'Waiting for daemon status...');
+        schedulePoll(400);
       } else {
+        connectInProgress = false;
+        clearPoll();
         updateStatus('Connection failed', 'failed', data.message);
       }
     } catch (err) {
+      connectInProgress = false;
+      clearPoll();
       updateStatus('Connection error', 'failed', err.message || 'Unexpected network error.');
     }
   }
 
   async function pollStatus() {
     try {
-      var response = await fetch('/api/status');
+      var response = await fetch('/api/status', { cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error('Status endpoint unavailable');
+      }
       var data = await response.json();
-      var tone = statusToneForState(data.status);
+      updateStatusFromSnapshot(data);
 
       if (data.status === 'Connected') {
-        updateStatus('Connected to ' + (data.connected_ssid || 'network'), tone, 'You can close this page now.');
+        connectInProgress = false;
+        clearPoll();
         return;
       }
 
       if (data.status === 'Failed') {
-        updateStatus('Connection failed', tone, data.last_error || 'Unknown error while connecting.');
+        connectInProgress = false;
+        clearPoll();
         return;
       }
 
       if (data.status === 'Connecting') {
-        updateStatus('Connecting to ' + (data.connecting_to || 'network') + '...', tone, 'Still negotiating with access point...');
-        setTimeout(pollStatus, 1000);
+        schedulePoll(1000);
+        return;
       }
-    } catch (_) {
-      updateStatus('Connection in progress', 'connecting', 'Portal may restart while network comes up.');
+
+      schedulePoll(connectInProgress ? 1200 : 2500);
+    } catch (err) {
+      if (connectInProgress) {
+        updateStatus('Connection in progress', 'connecting', 'Still attempting to join the network...');
+        schedulePoll(1500);
+        return;
+      }
+
+      updateStatus('Waiting for portal status', 'waiting', 'Retrying status sync...');
+      schedulePoll(2500);
     }
   }
 
@@ -167,10 +235,16 @@ const PORTAL_BEHAVIOR_JS: &str = r#"
   bindNetworkRows();
 
   setInterval(function () {
+    if (connectInProgress) {
+      return;
+    }
+
     if (!document.querySelector('.modal:not(.hidden)')) {
       window.location.reload();
     }
   }, 30000);
+
+  pollStatus();
 })();
 "#;
 
@@ -323,6 +397,7 @@ pub fn render_portal_page(snapshot: &WifiStateSnapshot) -> String {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="color-scheme" content="dark">
   <title>Hyper Recovery - WiFi Setup</title>
   <link rel="stylesheet" href="/style.css">
 </head>

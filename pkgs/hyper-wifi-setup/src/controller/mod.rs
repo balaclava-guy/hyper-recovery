@@ -201,8 +201,12 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
                                 let mut state = ctrl_state.wifi_state.write().await;
                                 state.status = ConnectionStatus::Connecting;
                                 state.connecting_to = Some(ssid.clone());
+                                state.last_error = None;
                                 let _ = ctrl_state.state_tx.send(state.clone());
                             }
+
+                            // Give the portal a short window to render "connecting" before AP teardown.
+                            tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
 
                             // Stop AP
                             if let Err(e) = ap_manager::stop_ap().await {
@@ -233,6 +237,7 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
                                     let mut state = ctrl_state.wifi_state.write().await;
                                     state.status = ConnectionStatus::Connected;
                                     state.connected_ssid = Some(ssid);
+                                    state.connecting_to = None;
                                     state.ap_running = false;
                                     let _ = ctrl_state.state_tx.send(state.clone());
 
@@ -254,6 +259,7 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
 
                                     let mut state = ctrl_state.wifi_state.write().await;
                                     state.status = ConnectionStatus::Failed;
+                                    state.connecting_to = None;
                                     state.last_error = Some(e.to_string());
                                     state.ap_running = true;
                                     let _ = ctrl_state.state_tx.send(state.clone());

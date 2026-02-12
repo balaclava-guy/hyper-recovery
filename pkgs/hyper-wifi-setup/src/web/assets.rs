@@ -46,7 +46,13 @@ body {
   min-height: 100%;
 }
 
+html {
+  color-scheme: dark;
+  background: hsl(var(--background));
+}
+
 body {
+  color-scheme: dark;
   color: hsl(var(--foreground));
   background:
     radial-gradient(1200px 700px at 10% -20%, hsla(var(--primary), 0.22), transparent 50%),
@@ -54,6 +60,13 @@ body {
     hsl(var(--background));
   font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
   line-height: 1.4;
+}
+
+button,
+input,
+select,
+textarea {
+  color: hsl(var(--foreground));
 }
 
 .portal-root {

@@ -117,6 +117,10 @@ in
         TTYVHangup = true;
         TTYVTDisallocate = true;
       };
+
+      postStop = ''
+        ${pkgs.systemd}/bin/systemctl start getty@tty1.service || true
+      '';
     };
 
     # Create credentials directory
