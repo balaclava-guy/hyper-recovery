@@ -9,6 +9,9 @@ use tokio::sync::{Mutex, OnceCell};
 // Global handles for cleanup
 static HOSTAPD_HANDLE: OnceCell<Mutex<Option<Child>>> = OnceCell::const_new();
 static DNSMASQ_HANDLE: OnceCell<Mutex<Option<Child>>> = OnceCell::const_new();
+const RUNTIME_DIR: &str = "/run/hyper-wifi-setup";
+const HOSTAPD_CONF_PATH: &str = "/run/hyper-wifi-setup/hyper-hostapd.conf";
+const DNSMASQ_CONF_PATH: &str = "/run/hyper-wifi-setup/hyper-dnsmasq.conf";
 
 /// Start the WiFi access point
 pub async fn start_ap(interface: &str, ssid: &str, ap_ip: &str) -> Result<()> {
@@ -65,15 +68,12 @@ wpa=0
         interface, ssid
     );
 
-    let hostapd_conf_path = "/tmp/hyper-hostapd.conf";
-    tokio::fs::write(hostapd_conf_path, &hostapd_conf)
-        .await
-        .context("Failed to write hostapd config")?;
-
-    let runtime_dir = "/run/hyper-wifi-setup";
-    tokio::fs::create_dir_all(runtime_dir)
+    tokio::fs::create_dir_all(RUNTIME_DIR)
         .await
         .context("Failed to create runtime directory")?;
+    tokio::fs::write(HOSTAPD_CONF_PATH, &hostapd_conf)
+        .await
+        .context("Failed to write hostapd config")?;
 
     let ap_ip_addr: Ipv4Addr = ap_ip
         .parse()
@@ -94,11 +94,10 @@ dhcp-option=option:router,{}
 dhcp-option=option:dns-server,{}
 address=/#/{}
 "#,
-        interface, ap_ip, runtime_dir, runtime_dir, dhcp_start, dhcp_end, ap_ip, ap_ip, ap_ip
+        interface, ap_ip, RUNTIME_DIR, RUNTIME_DIR, dhcp_start, dhcp_end, ap_ip, ap_ip, ap_ip
     );
 
-    let dnsmasq_conf_path = "/tmp/hyper-dnsmasq.conf";
-    tokio::fs::write(dnsmasq_conf_path, &dnsmasq_conf)
+    tokio::fs::write(DNSMASQ_CONF_PATH, &dnsmasq_conf)
         .await
         .context("Failed to write dnsmasq config")?;
 
@@ -106,7 +105,7 @@ address=/#/{}
     tracing::info!("Starting hostapd");
     let mut hostapd = Command::new("hostapd")
         .arg("-d")
-        .arg(hostapd_conf_path)
+        .arg(HOSTAPD_CONF_PATH)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -135,7 +134,7 @@ address=/#/{}
     let mut dnsmasq = Command::new("dnsmasq")
         .arg("--keep-in-foreground")
         .arg("--no-daemon")
-        .arg(&format!("--conf-file={}", dnsmasq_conf_path))
+        .arg(&format!("--conf-file={}", DNSMASQ_CONF_PATH))
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -177,7 +176,7 @@ pub async fn stop_ap() -> Result<()> {
 
     // Also kill any stray dnsmasq processes we started
     let _ = Command::new("pkill")
-        .args(["-f", "hyper-dnsmasq.conf"])
+        .args(["-f", DNSMASQ_CONF_PATH])
         .output()
         .await;
 
@@ -191,13 +190,13 @@ pub async fn stop_ap() -> Result<()> {
 
     // Also kill any stray hostapd processes
     let _ = Command::new("pkill")
-        .args(["-f", "hyper-hostapd.conf"])
+        .args(["-f", HOSTAPD_CONF_PATH])
         .output()
         .await;
 
     // Clean up temp files
-    let _ = tokio::fs::remove_file("/tmp/hyper-hostapd.conf").await;
-    let _ = tokio::fs::remove_file("/tmp/hyper-dnsmasq.conf").await;
+    let _ = tokio::fs::remove_file(HOSTAPD_CONF_PATH).await;
+    let _ = tokio::fs::remove_file(DNSMASQ_CONF_PATH).await;
     let _ = tokio::fs::remove_file("/run/hyper-wifi-setup/dnsmasq.leases").await;
     let _ = tokio::fs::remove_file("/run/hyper-wifi-setup/dnsmasq.pid").await;
 

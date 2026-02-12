@@ -8,25 +8,6 @@ use leptos_shadcn_button::{Button, ButtonSize, ButtonVariant};
 use leptos_shadcn_card::{Card, CardContent, CardDescription, CardHeader, CardTitle};
 use leptos_shadcn_input::Input;
 
-const THEME_BOOTSTRAP_JS: &str = r#"
-(function () {
-  var root = document.documentElement;
-  var media = window.matchMedia('(prefers-color-scheme: dark)');
-
-  function syncTheme() {
-    root.classList.toggle('dark', media.matches);
-  }
-
-  syncTheme();
-
-  if (typeof media.addEventListener === 'function') {
-    media.addEventListener('change', syncTheme);
-  } else if (typeof media.addListener === 'function') {
-    media.addListener(syncTheme);
-  }
-})();
-"#;
-
 const PORTAL_BEHAVIOR_JS: &str = r#"
 (function () {
   var selectedSsid = '';
@@ -338,20 +319,19 @@ pub fn render_portal_page(snapshot: &WifiStateSnapshot) -> String {
 
     format!(
         r#"<!DOCTYPE html>
-<html lang="en">
+<html class="dark" lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Hyper Recovery - WiFi Setup</title>
   <link rel="stylesheet" href="/style.css">
-  <script>{}</script>
 </head>
 <body>
 {}
 <script>{}</script>
 </body>
 </html>"#,
-        THEME_BOOTSTRAP_JS, body_html, PORTAL_BEHAVIOR_JS
+        body_html, PORTAL_BEHAVIOR_JS
     )
 }
 

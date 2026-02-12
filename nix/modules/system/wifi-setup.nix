@@ -97,6 +97,7 @@ in
     # TUI (optional)
     systemd.services.hyper-wifi-setup-tui = mkIf cfg.autoStartTui {
       description = "Hyper WiFi Setup TUI";
+      wantedBy = [ "multi-user.target" ];
       after = [ "hyper-wifi-setup.service" "plymouth-quit.service" "plymouth-quit-wait.service" ];
       wants = [ "hyper-wifi-setup.service" ];
       before = [ "getty@tty1.service" ];
@@ -106,8 +107,7 @@ in
         Type = "simple";
         ExecStartPre = "${pkgs.kbd}/bin/chvt 1";
         ExecStart = "${hyper-wifi-setup}/bin/hyper-wifi-setup tui";
-        Restart = "on-failure";
-        RestartSec = "2s";
+        Restart = "no";
 
         StandardInput = "tty-force";
         StandardOutput = "tty";
@@ -116,16 +116,6 @@ in
         TTYReset = true;
         TTYVHangup = true;
         TTYVTDisallocate = true;
-      };
-    };
-
-    systemd.paths.hyper-wifi-setup-tui = mkIf cfg.autoStartTui {
-      description = "Start Hyper WiFi Setup TUI when IPC socket appears";
-      wantedBy = [ "multi-user.target" ];
-
-      pathConfig = {
-        PathExists = "/run/hyper-wifi-setup.sock";
-        Unit = "hyper-wifi-setup-tui.service";
       };
     };
 

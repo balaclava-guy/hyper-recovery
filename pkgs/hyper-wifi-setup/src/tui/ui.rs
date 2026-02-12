@@ -20,6 +20,19 @@ const WARNING: Color = Color::Rgb(239, 190, 29); // #efbe1d
 
 pub fn draw(f: &mut Frame, app: &App) {
     let size = f.area();
+    let backdrop = Block::default().style(Style::default().bg(Color::Black));
+    f.render_widget(backdrop, size);
+
+    let panel = centered_box(size, 104, 30);
+    f.render_widget(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(PRIMARY))
+            .style(Style::default().bg(BG_DARK)),
+        panel,
+    );
+
+    let inner = inset(panel, 1);
 
     // Main layout
     let chunks = Layout::default()
@@ -29,7 +42,7 @@ pub fn draw(f: &mut Frame, app: &App) {
             Constraint::Min(10),   // Content
             Constraint::Length(3), // Footer
         ])
-        .split(size);
+        .split(inner);
 
     draw_header(f, chunks[0], app);
     draw_content(f, chunks[1], app);
@@ -339,4 +352,28 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+fn centered_box(area: Rect, max_width: u16, max_height: u16) -> Rect {
+    let available_width = area.width.saturating_sub(2).max(1);
+    let available_height = area.height.saturating_sub(2).max(1);
+    let width = available_width.min(max_width);
+    let height = available_height.min(max_height);
+
+    Rect {
+        x: area.x + (area.width.saturating_sub(width)) / 2,
+        y: area.y + (area.height.saturating_sub(height)) / 2,
+        width,
+        height,
+    }
+}
+
+fn inset(area: Rect, padding: u16) -> Rect {
+    let double = padding.saturating_mul(2);
+    Rect {
+        x: area.x.saturating_add(padding),
+        y: area.y.saturating_add(padding),
+        width: area.width.saturating_sub(double).max(1),
+        height: area.height.saturating_sub(double).max(1),
+    }
 }

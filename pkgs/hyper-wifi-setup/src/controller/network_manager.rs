@@ -18,6 +18,7 @@ const AP_IP_CANDIDATES: [&str; 5] = [
     "192.168.88.1",
     "10.123.0.1",
 ];
+const NMCLI_SEPARATOR: &str = "|";
 
 #[derive(Debug, Clone)]
 struct WirelessInterface {
@@ -330,15 +331,22 @@ pub async fn wait_for_connectivity() -> Result<()> {
 pub async fn scan_networks(interface: &str) -> Result<Vec<NetworkInfo>> {
     tracing::info!(interface = %interface, "Scanning for WiFi networks");
 
-    // Use nmcli for simplicity - it handles the async scan properly
+    // Use nmcli for simplicity - it handles the async scan properly.
+    // Use a custom field separator to avoid splitting BSSID colons.
     let output = tokio::process::Command::new("nmcli")
         .args([
             "-t",
+            "--escape",
+            "yes",
+            "--separator",
+            NMCLI_SEPARATOR,
             "-f",
             "SSID,BSSID,SIGNAL,FREQ,CHAN,SECURITY",
             "device",
             "wifi",
             "list",
+            "ifname",
+            interface,
             "--rescan",
             "yes",
         ])
@@ -356,9 +364,9 @@ pub async fn scan_networks(interface: &str) -> Result<Vec<NetworkInfo>> {
     let mut seen_ssids = std::collections::HashSet::new();
 
     for line in stdout.lines() {
-        let parts: Vec<&str> = line.split(':').collect();
-        if parts.len() >= 6 {
-            let ssid = parts[0].to_string();
+        let fields = split_escaped_fields(line, NMCLI_SEPARATOR.chars().next().unwrap());
+        if fields.len() >= 6 {
+            let ssid = fields[0].clone();
 
             // Skip empty SSIDs and duplicates
             if ssid.is_empty() || seen_ssids.contains(&ssid) {
@@ -366,15 +374,20 @@ pub async fn scan_networks(interface: &str) -> Result<Vec<NetworkInfo>> {
             }
             seen_ssids.insert(ssid.clone());
 
-            let signal: u8 = parts[2].parse().unwrap_or(0);
-            let freq: u32 = parts[3].trim_end_matches(" MHz").parse().unwrap_or(0);
-            let channel: u8 = parts[4].parse().unwrap_or(0);
-            let security = parts[5].to_string();
+            let signal: u8 = fields[2].parse().unwrap_or(0);
+            let freq: u32 = fields[3]
+                .split_whitespace()
+                .next()
+                .unwrap_or("0")
+                .parse()
+                .unwrap_or(0);
+            let channel: u8 = fields[4].parse().unwrap_or(0);
+            let security = fields[5].clone();
             let is_secured = !security.is_empty() && security != "--";
 
             networks.push(NetworkInfo {
                 ssid,
-                bssid: parts[1].to_string(),
+                bssid: fields[1].clone(),
                 signal_strength: signal,
                 frequency: freq,
                 channel,
@@ -405,40 +418,107 @@ pub async fn connect_to_network(interface: &str, ssid: &str, password: &str) -> 
         .output()
         .await;
 
-    // Small delay for NM to pick up the device
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-
-    // Try to connect
-    let output = tokio::process::Command::new("nmcli")
-        .args([
-            "device", "wifi", "connect", ssid, "password", password, "ifname", interface,
-        ])
+    // Clear AP addressing leftovers before returning interface to client mode.
+    let _ = tokio::process::Command::new("ip")
+        .args(["addr", "flush", "dev", interface])
         .output()
-        .await
-        .context("Failed to run nmcli connect")?;
+        .await;
+    let _ = tokio::process::Command::new("ip")
+        .args(["link", "set", interface, "up"])
+        .output()
+        .await;
 
-    if !output.status.success() {
+    let max_attempts = 3;
+    let mut last_error = String::new();
+
+    for attempt in 1..=max_attempts {
+        tracing::info!(attempt, max_attempts, ssid = %ssid, "Attempting WiFi connection");
+
+        let _ = tokio::process::Command::new("nmcli")
+            .args(["device", "wifi", "rescan", "ifname", interface])
+            .output()
+            .await;
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        let mut command = tokio::process::Command::new("nmcli");
+        command.args([
+            "--wait", "20", "device", "wifi", "connect", ssid, "ifname", interface,
+        ]);
+        if !password.is_empty() {
+            command.args(["password", password]);
+        }
+
+        let output = command
+            .output()
+            .await
+            .context("Failed to run nmcli connect")?;
+
+        if output.status.success() {
+            wait_for_interface_connection(interface, std::time::Duration::from_secs(30)).await?;
+            tracing::info!("Successfully connected to WiFi network");
+            return Ok(());
+        }
+
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        anyhow::bail!("Connection failed: {} {}", stdout, stderr);
+        last_error = format!("{} {}", stdout.trim(), stderr.trim())
+            .trim()
+            .to_string();
+
+        if last_error.contains("No network with SSID") {
+            tracing::warn!(
+                ssid = %ssid,
+                interface = %interface,
+                "SSID not visible in scan cache; retrying with hidden=yes"
+            );
+
+            let mut hidden_connect = tokio::process::Command::new("nmcli");
+            hidden_connect.args([
+                "--wait", "20", "device", "wifi", "connect", ssid, "ifname", interface, "hidden",
+                "yes",
+            ]);
+            if !password.is_empty() {
+                hidden_connect.args(["password", password]);
+            }
+
+            let hidden_output = hidden_connect
+                .output()
+                .await
+                .context("Failed to run nmcli hidden connect")?;
+
+            if hidden_output.status.success() {
+                wait_for_interface_connection(interface, std::time::Duration::from_secs(30))
+                    .await?;
+                tracing::info!("Successfully connected to WiFi network via hidden retry");
+                return Ok(());
+            }
+
+            let hidden_stderr = String::from_utf8_lossy(&hidden_output.stderr);
+            let hidden_stdout = String::from_utf8_lossy(&hidden_output.stdout);
+            last_error = format!("{} {}", hidden_stdout.trim(), hidden_stderr.trim())
+                .trim()
+                .to_string();
+        }
+
+        tracing::warn!(
+            attempt,
+            max_attempts,
+            ssid = %ssid,
+            error = %last_error,
+            "WiFi connection attempt failed"
+        );
+
+        if attempt < max_attempts {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
     }
 
-    // Wait for connectivity
-    let timeout =
-        tokio::time::timeout(std::time::Duration::from_secs(30), wait_for_connectivity()).await;
-
-    match timeout {
-        Ok(Ok(())) => {
-            tracing::info!("Successfully connected and got connectivity");
-            Ok(())
-        }
-        Ok(Err(e)) => {
-            anyhow::bail!("Connected but failed to verify: {}", e);
-        }
-        Err(_) => {
-            anyhow::bail!("Connection timed out waiting for connectivity");
-        }
-    }
+    anyhow::bail!(
+        "Connection failed after {} attempts: {}",
+        max_attempts,
+        last_error
+    );
 }
 
 /// Create a WiFi connection profile via D-Bus
@@ -486,4 +566,82 @@ pub async fn create_wifi_connection_dbus(ssid: &str, password: &str) -> Result<S
         .deserialize()?;
 
     Ok(path.to_string())
+}
+
+fn split_escaped_fields(line: &str, separator: char) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut current = String::new();
+    let mut escaped = false;
+
+    for ch in line.chars() {
+        if escaped {
+            current.push(ch);
+            escaped = false;
+            continue;
+        }
+
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+
+        if ch == separator {
+            fields.push(current);
+            current = String::new();
+            continue;
+        }
+
+        current.push(ch);
+    }
+
+    if escaped {
+        current.push('\\');
+    }
+    fields.push(current);
+
+    fields
+}
+
+async fn wait_for_interface_connection(
+    interface: &str,
+    timeout: std::time::Duration,
+) -> Result<()> {
+    let deadline = std::time::Instant::now() + timeout;
+
+    loop {
+        let output = tokio::process::Command::new("nmcli")
+            .args(["-t", "-f", "GENERAL.STATE", "device", "show", interface])
+            .output()
+            .await
+            .context("Failed to check interface state")?;
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if stdout.contains("GENERAL.STATE:100") {
+                return Ok(());
+            }
+        }
+
+        if std::time::Instant::now() >= deadline {
+            anyhow::bail!("Connection timed out waiting for interface to become connected");
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_escaped_fields;
+
+    #[test]
+    fn splits_nmcli_line_with_escaped_separator() {
+        let line = "My\\|SSID|76\\:d1\\:a9\\:a1\\:32\\:d1|88|2412|1|WPA2";
+        let fields = split_escaped_fields(line, '|');
+
+        assert_eq!(fields.len(), 6);
+        assert_eq!(fields[0], "My|SSID");
+        assert_eq!(fields[1], "76:d1:a9:a1:32:d1");
+        assert_eq!(fields[2], "88");
+    }
 }

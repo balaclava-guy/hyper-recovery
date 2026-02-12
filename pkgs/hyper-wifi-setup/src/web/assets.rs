@@ -16,27 +16,6 @@ pub async fn serve_css() -> impl IntoResponse {
 
 const CSS_CONTENT: &str = r##"
 :root {
-  --background: 210 30% 98%;
-  --foreground: 220 24% 15%;
-  --card: 0 0% 100%;
-  --card-foreground: 220 24% 15%;
-  --primary: 206 90% 46%;
-  --primary-foreground: 210 40% 99%;
-  --secondary: 200 70% 92%;
-  --secondary-foreground: 215 34% 20%;
-  --accent: 198 70% 90%;
-  --accent-foreground: 215 34% 20%;
-  --muted: 210 20% 92%;
-  --muted-foreground: 215 18% 40%;
-  --destructive: 2 74% 54%;
-  --destructive-foreground: 0 0% 100%;
-  --border: 214 26% 84%;
-  --input: 214 26% 84%;
-  --ring: 206 90% 46%;
-  --radius: 12px;
-}
-
-.dark {
   --background: 222 32% 10%;
   --foreground: 210 24% 96%;
   --card: 223 30% 14%;
@@ -54,6 +33,7 @@ const CSS_CONTENT: &str = r##"
   --border: 217 24% 30%;
   --input: 217 24% 30%;
   --ring: 197 85% 63%;
+  --radius: 12px;
 }
 
 * {
