@@ -1,8 +1,8 @@
 //! Web portal using Leptos SSR + Axum
 
+mod assets;
 mod components;
 mod routes;
-mod assets;
 
 use crate::controller::{AppState, WifiState};
 use axum::{
@@ -50,15 +50,19 @@ pub async fn run_server(
 /// Captive portal check - return 204 when connected, redirect when not
 async fn captive_check(State(state): State<Arc<AppState>>) -> Response {
     let wifi_state = state.wifi_state.read().await;
-    
-    if matches!(wifi_state.status, crate::controller::ConnectionStatus::Connected) {
+
+    if matches!(
+        wifi_state.status,
+        crate::controller::ConnectionStatus::Connected
+    ) {
         StatusCode::NO_CONTENT.into_response()
     } else {
         // Redirect to portal
         (
             StatusCode::FOUND,
             [("Location", format!("http://{}/", state.config.ap_ip))],
-        ).into_response()
+        )
+            .into_response()
     }
 }
 
@@ -67,5 +71,6 @@ async fn captive_redirect(State(state): State<Arc<AppState>>) -> Response {
     (
         StatusCode::FOUND,
         [("Location", format!("http://{}/", state.config.ap_ip))],
-    ).into_response()
+    )
+        .into_response()
 }

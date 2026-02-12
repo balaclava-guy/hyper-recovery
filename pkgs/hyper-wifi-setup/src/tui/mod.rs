@@ -10,10 +10,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{
-    backend::CrosstermBackend,
-    Terminal,
-};
+use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
 use std::time::Duration;
 
@@ -64,7 +61,9 @@ impl App {
 
     fn selected_ssid(&self) -> Option<String> {
         self.state.as_ref().and_then(|s| {
-            s.available_networks.get(self.selected_network).map(|n| n.ssid.clone())
+            s.available_networks
+                .get(self.selected_network)
+                .map(|n| n.ssid.clone())
         })
     }
 
@@ -142,14 +141,18 @@ async fn run_app(
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
                                 if let Some(state) = &app.state {
-                                    if app.selected_network < state.available_networks.len().saturating_sub(1) {
+                                    if app.selected_network
+                                        < state.available_networks.len().saturating_sub(1)
+                                    {
                                         app.selected_network += 1;
                                     }
                                 }
                             }
                             KeyCode::Enter => {
                                 if let Some(state) = &app.state {
-                                    if let Some(network) = state.available_networks.get(app.selected_network) {
+                                    if let Some(network) =
+                                        state.available_networks.get(app.selected_network)
+                                    {
                                         if network.is_secured {
                                             app.input_mode = InputMode::Password;
                                         } else {

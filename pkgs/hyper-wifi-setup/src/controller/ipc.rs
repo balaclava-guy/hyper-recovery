@@ -1,7 +1,7 @@
 //! IPC server for TUI client communication
 
-use super::{AppState, ControlCommand};
 use super::state::WifiStateSnapshot;
+use super::{AppState, ControlCommand};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -13,7 +13,12 @@ use tokio::net::{UnixListener, UnixStream};
 pub enum IpcRequest {
     GetStatus,
     Scan,
-    Connect { ssid: String, password: String, #[serde(default = "default_save")] save: bool },
+    Connect {
+        ssid: String,
+        password: String,
+        #[serde(default = "default_save")]
+        save: bool,
+    },
     Shutdown,
 }
 
@@ -79,10 +84,18 @@ async fn handle_client(stream: UnixStream, state: Arc<AppState>) -> Result<()> {
                 let _ = state.command_tx.send(ControlCommand::Scan).await;
                 IpcResponse::Ok
             }
-            IpcRequest::Connect { ssid, password, save } => {
+            IpcRequest::Connect {
+                ssid,
+                password,
+                save,
+            } => {
                 let _ = state
                     .command_tx
-                    .send(ControlCommand::Connect { ssid, password, save })
+                    .send(ControlCommand::Connect {
+                        ssid,
+                        password,
+                        save,
+                    })
                     .await;
                 IpcResponse::Ok
             }

@@ -1,18 +1,18 @@
 //! WiFi Controller - Core logic for AP management and network connection
 
-mod network_manager;
 mod ap_manager;
-pub mod state;
-pub mod ipc;
 pub mod credentials;
+pub mod ipc;
+mod network_manager;
+pub mod state;
 
-pub use state::{WifiState, NetworkInfo, ConnectionStatus, WifiStateSnapshot};
+pub use state::{ConnectionStatus, NetworkInfo, WifiState, WifiStateSnapshot};
 
+use anyhow::{Context, Result};
 use std::sync::Arc;
-use tokio::sync::{watch, mpsc, RwLock};
 use tokio::net::UnixListener;
 use tokio::signal;
-use anyhow::Result;
+use tokio::sync::{mpsc, watch, RwLock};
 
 /// Daemon configuration
 pub struct DaemonConfig {
@@ -35,7 +35,11 @@ pub struct AppState {
 #[derive(Debug, Clone)]
 pub enum ControlCommand {
     Scan,
-    Connect { ssid: String, password: String, save: bool },
+    Connect {
+        ssid: String,
+        password: String,
+        save: bool,
+    },
     Shutdown,
 }
 
@@ -58,9 +62,16 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
         command_tx: command_tx.clone(),
     });
 
+    network_manager::validate_wireless_interface(&app_state.config.interface).with_context(|| {
+        format!(
+            "WiFi interface '{}' is not usable for AP setup",
+            app_state.config.interface
+        )
+    })?;
+
     // Check for existing connectivity
     tracing::info!("Checking for existing network connectivity...");
-    
+
     let has_connectivity = network_manager::check_connectivity().await?;
     if has_connectivity {
         tracing::info!("Already connected to network, exiting");
@@ -72,11 +83,12 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
         seconds = app_state.config.grace_period,
         "Waiting grace period for network..."
     );
-    
+
     let grace_result = tokio::time::timeout(
         std::time::Duration::from_secs(app_state.config.grace_period),
         network_manager::wait_for_connectivity(),
-    ).await;
+    )
+    .await;
 
     if grace_result.is_ok() {
         tracing::info!("Network connected during grace period, exiting");
@@ -94,10 +106,10 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
     }
 
     let networks = network_manager::scan_networks(&app_state.config.interface).await?;
-    
+
     // Load saved credentials and check for known networks
     let creds_store = credentials::CredentialsStore::load().unwrap_or_default();
-    
+
     if let Some(known_network) = creds_store.best_known_network(&networks) {
         if let Some(password) = creds_store.get_password(&known_network.ssid) {
             tracing::info!(
@@ -105,13 +117,15 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
                 signal = known_network.signal_strength,
                 "Found saved credentials for available network, attempting auto-connect"
             );
-            
+
             // Try to connect with saved credentials
             match network_manager::connect_to_network(
                 &app_state.config.interface,
                 &known_network.ssid,
                 password,
-            ).await {
+            )
+            .await
+            {
                 Ok(()) => {
                     tracing::info!(ssid = %known_network.ssid, "Auto-connected using saved credentials");
                     return Ok(());
@@ -143,7 +157,8 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
         &app_state.config.interface,
         &app_state.config.ssid,
         &app_state.config.ap_ip,
-    ).await?;
+    )
+    .await?;
 
     {
         let mut state = app_state.wifi_state.write().await;
@@ -160,16 +175,13 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
     tracing::info!(path = socket_path, "IPC server listening");
 
     let ipc_state = app_state.clone();
-    let ipc_handle = tokio::spawn(async move {
-        ipc::run_ipc_server(listener, ipc_state).await
-    });
+    let ipc_handle = tokio::spawn(async move { ipc::run_ipc_server(listener, ipc_state).await });
 
     // Start web portal
     let web_state = app_state.clone();
     let web_state_rx = state_rx.clone();
-    let web_handle = tokio::spawn(async move {
-        crate::web::run_server(web_state, web_state_rx).await
-    });
+    let web_handle =
+        tokio::spawn(async move { crate::web::run_server(web_state, web_state_rx).await });
 
     // Main control loop
     let ctrl_state = app_state.clone();
@@ -185,7 +197,7 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
                         }
                         ControlCommand::Connect { ssid, password, save } => {
                             tracing::info!(ssid = %ssid, save = save, "Connection requested");
-                            
+
                             // Update state
                             {
                                 let mut state = ctrl_state.wifi_state.write().await;
@@ -207,7 +219,7 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
                             ).await {
                                 Ok(()) => {
                                     tracing::info!("Successfully connected to WiFi");
-                                    
+
                                     // Save credentials if requested
                                     if save {
                                         let mut creds = credentials::CredentialsStore::load()
@@ -219,20 +231,20 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
                                             tracing::info!(ssid = %ssid, "Saved WiFi credentials");
                                         }
                                     }
-                                    
+
                                     let mut state = ctrl_state.wifi_state.write().await;
                                     state.status = ConnectionStatus::Connected;
                                     state.connected_ssid = Some(ssid);
                                     state.ap_running = false;
                                     let _ = ctrl_state.state_tx.send(state.clone());
-                                    
+
                                     // Give time for DHCP, then exit
                                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                                     break;
                                 }
                                 Err(e) => {
                                     tracing::error!(error = %e, "Failed to connect");
-                                    
+
                                     // Restart AP
                                     if let Err(e) = ap_manager::start_ap(
                                         &ctrl_state.config.interface,
@@ -287,16 +299,20 @@ pub async fn print_status(socket_path: &str) -> Result<()> {
                 println!("Connected to: {}", ssid);
             }
             if state.ap_running {
-                println!("AP Running: {} ({})", 
+                println!(
+                    "AP Running: {} ({})",
                     state.ap_ssid.as_deref().unwrap_or("unknown"),
-                    state.portal_url.as_deref().unwrap_or("unknown"));
+                    state.portal_url.as_deref().unwrap_or("unknown")
+                );
             }
             println!("Available networks: {}", state.available_networks.len());
             for net in &state.available_networks {
-                println!("  - {} ({}%, {})", 
-                    net.ssid, 
+                println!(
+                    "  - {} ({}%, {})",
+                    net.ssid,
                     net.signal_strength,
-                    if net.is_secured { "secured" } else { "open" });
+                    if net.is_secured { "secured" } else { "open" }
+                );
             }
         }
         Err(e) => {
