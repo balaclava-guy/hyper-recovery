@@ -19,19 +19,22 @@
     enable = true;
     # TODO(2026-02-10): Temporary workaround.
     # Cockpit Python version mismatch causing buildEnv path collision.
-    package = pkgs.cockpit.overrideAttrs (old: {
-      passthru = (old.passthru or { }) // {
-        cockpitPath =
-          pkgs.lib.filter
-            (p: !(pkgs.lib.hasInfix "python3" (builtins.toString p)))
-            (old.passthru.cockpitPath or [ ]);
-      };
-    });
+    package =
+      let
+        base = pkgs.cockpit.overrideAttrs (old: {
+          passthru = (old.passthru or { }) // {
+            cockpitPath =
+              pkgs.lib.filter
+                (p: !(pkgs.lib.hasInfix "python3" (builtins.toString p)))
+                (old.passthru.cockpitPath or [ ]);
+          };
+        });
+      in
+      base;
     openFirewall = true;
     # Allow access from dynamic LAN IP/hostnames used by recovery images.
     allowed-origins = [ "*" ];
-    # Cockpit plugins to ship with the web UI
-    packages = with pkgs; [
+    plugins = with pkgs; [
       cockpit-machines
       cockpit-zfs
       cockpit-files
