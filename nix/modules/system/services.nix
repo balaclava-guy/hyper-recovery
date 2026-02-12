@@ -7,6 +7,7 @@
   # Virtualization Stack
   virtualisation.libvirtd = {
     enable = true;
+    dbus.enable = true;
     qemu = {
       package = pkgs.qemu_kvm;
       runAsRoot = true;
