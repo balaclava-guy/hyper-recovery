@@ -21,6 +21,10 @@ pkgs.stdenvNoCC.mkDerivation {
     cp snosu-hyper-recovery.script $out/share/plymouth/themes/snosu-hyper-recovery/
     cp *.png $out/share/plymouth/themes/snosu-hyper-recovery/
     cp -r animation $out/share/plymouth/themes/snosu-hyper-recovery/
+
+    substituteInPlace $out/share/plymouth/themes/snosu-hyper-recovery/snosu-hyper-recovery.plymouth \
+      --replace-fail "/run/current-system/sw/share/plymouth/themes/snosu-hyper-recovery" \
+                     "$out/share/plymouth/themes/snosu-hyper-recovery"
     
     mkdir -p $out/share/fonts/truetype
     cp $fontSrc $out/share/fonts/truetype/undefined-medium.ttf
