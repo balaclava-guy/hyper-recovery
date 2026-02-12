@@ -448,24 +448,23 @@ def setup_shared_folder() -> Optional[Path]:
         Path to mounted shared folder, or None if not available
     """
     try:
-        # Check if virtio-9p module is loaded
-        result = subprocess.run(
-            ["lsmod"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        if "9p" not in result.stdout and "9pnet_virtio" not in result.stdout:
-            # Try to load the module
-            subprocess.run(
-                ["modprobe", "9pnet_virtio"],
-                capture_output=True,
-                timeout=5
-            )
-        
+        # Try to load virtio-9p modules (best effort).
+        for module in ["9p", "9pnet", "9pnet_virtio"]:
+            try:
+                subprocess.run(
+                    ["modprobe", module],
+                    capture_output=True,
+                    timeout=5,
+                )
+            except FileNotFoundError:
+                # Continue even if modprobe is unavailable.
+                pass
+            except Exception:
+                pass
+
         # Create mount point
         SHARED_MOUNT_POINT.mkdir(parents=True, exist_ok=True)
-        
+
         # Try to mount the shared folder
         serial_notice(
             f"attempting shared-folder mount tag={SHARED_MOUNT_TAG} path={SHARED_MOUNT_POINT}"
@@ -477,7 +476,7 @@ def setup_shared_folder() -> Optional[Path]:
             text=True,
             timeout=10
         )
-        
+
         if result.returncode == 0:
             serial_notice(f"mounted shared folder at {SHARED_MOUNT_POINT}")
             return SHARED_MOUNT_POINT
@@ -489,9 +488,11 @@ def setup_shared_folder() -> Optional[Path]:
             else:
                 serial_notice("shared-folder mount failed with empty stderr")
             return None
-            
+
     except Exception as e:
-        print(f"⚠ Could not mount shared folder: {e}", file=sys.stderr)
+        message = f"Could not mount shared folder: {e}"
+        print(f"⚠ {message}", file=sys.stderr)
+        serial_notice(message)
         return None
 
 

@@ -117,6 +117,20 @@ in
     wantedBy = [ "multi-user.target" ];
     # Do not gate on network-online; it can delay/fail in CI VMs and block startup.
     after = [ "systemd-journald.service" ];
+
+    path = with pkgs; [
+      coreutils
+      procps
+      util-linux
+      kmod
+      systemd
+      networkmanager
+      iproute2
+      plymouth
+      pciutils
+      usbutils
+      grub2
+    ];
     
     serviceConfig = {
       Type = "oneshot";
