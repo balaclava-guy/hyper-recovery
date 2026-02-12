@@ -1,12 +1,8 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, ... }:
 
 # Hardware configuration for Hyper Recovery environment
 # Kernel, firmware, and driver configuration
 
-let
-  firmware = import ../../packages/firmware.nix { inherit pkgs lib; };
-  hyper-firmware-core = firmware.hyper-firmware-core;
-in
 {
   # Kernel & Boot Parameters (CLEAN - no debug)
   boot.kernelPackages = pkgs.linuxPackages;
@@ -56,10 +52,11 @@ in
   boot.initrd.availableKernelModules = [ "virtio_gpu" "virtio_pci" "9p" "9pnet_virtio" ];
 
   # Firmware & wireless
-  hardware.enableAllFirmware = false;
-  hardware.enableRedistributableFirmware = false;
+  # Include full linux-firmware so all wireless adapter blobs are available.
+  hardware.enableAllFirmware = true;
+  hardware.enableRedistributableFirmware = true;
   hardware.firmware = [
-    hyper-firmware-core
+    pkgs.linux-firmware
     pkgs.wireless-regdb
   ];
   hardware.wirelessRegulatoryDatabase = true;
