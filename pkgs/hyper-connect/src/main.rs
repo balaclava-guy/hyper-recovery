@@ -1,4 +1,4 @@
-//! Hyper WiFi Setup - WiFi configuration daemon with TUI and captive portal
+//! Hyper Connect - WiFi configuration daemon with TUI and captive portal
 //!
 //! This binary provides three modes:
 //! - `daemon`: Runs the WiFi controller, AP, and web portal
@@ -13,7 +13,7 @@ use clap::{Parser, Subcommand};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[derive(Parser)]
-#[command(name = "hyper-wifi-setup")]
+#[command(name = "hyper-connect")]
 #[command(about = "WiFi setup for Hyper Recovery", long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -48,14 +48,14 @@ enum Commands {
     /// Run the TUI client (connects to daemon)
     Tui {
         /// Unix socket path for daemon communication
-        #[arg(long, default_value = "/run/hyper-wifi-setup.sock")]
+        #[arg(long, default_value = "/run/hyper-connect.sock")]
         socket: String,
     },
 
     /// Check current status
     Status {
         /// Unix socket path for daemon communication
-        #[arg(long, default_value = "/run/hyper-wifi-setup.sock")]
+        #[arg(long, default_value = "/run/hyper-connect.sock")]
         socket: String,
     },
 }
@@ -78,7 +78,7 @@ async fn main() -> anyhow::Result<()> {
             port,
             grace_period,
         } => {
-            tracing::info!("Starting Hyper WiFi Setup daemon");
+            tracing::info!("Starting Hyper Connect daemon");
             controller::run_daemon(controller::DaemonConfig {
                 interface,
                 ssid,

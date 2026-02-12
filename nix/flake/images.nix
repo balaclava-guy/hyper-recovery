@@ -14,7 +14,7 @@ let
           self.nixosModules.hardware
           self.nixosModules.branding
           self.nixosModules.services
-          self.nixosModules.wifi-setup
+          self.nixosModules.hyper-connect
 
           # ISO image infrastructure
           "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/iso-image.nix"
@@ -29,7 +29,7 @@ let
             isoImage.prependToMenuLabel = if debug then "START HYPER RECOVERY (Debug)" else "START HYPER RECOVERY";
 
             # Enable WiFi setup service
-            services.hyper-wifi-setup = {
+            services.hyper-connect = {
               enable = true;
               autoStartTui = true;
             };
@@ -49,7 +49,7 @@ in
     branding = import ../modules/system/branding.nix;
     services = import ../modules/system/services.nix;
     debug = import ../modules/system/debug.nix;
-    wifi-setup = import ../modules/system/wifi-setup.nix;
+    hyper-connect = import ../modules/system/hyper-connect.nix;
     iso-base = import ../modules/iso/base.nix;
     iso-grub-bootloader = import ../modules/iso/grub-bootloader.nix;
   };

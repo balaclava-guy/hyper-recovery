@@ -16,12 +16,13 @@
        hyper-debug-serial = (pkgs.callPackage ../packages/scripts {}).hyper-debug-serial;
        save-boot-logs = (pkgs.callPackage ../packages/scripts {}).save-boot-logs;
        hyper-ci-debug = (pkgs.callPackage ../packages/scripts {}).hyper-ci-debug;
+       hyper-fetch-iso = (pkgs.callPackage ../packages/scripts {}).hyper-fetch-iso;
       
        # Firmware package
        hyper-firmware-core = (pkgs.callPackage ../packages/firmware.nix {}).hyper-firmware-core;
       
       # WiFi setup daemon
-      hyper-wifi-setup = pkgs.callPackage ../packages/hyper-wifi-setup.nix {};
+      hyper-connect = pkgs.callPackage ../packages/hyper-connect.nix {};
     } // {
       # Theme VM (cross-platform)
       theme-vm = pkgs.stdenvNoCC.mkDerivation {

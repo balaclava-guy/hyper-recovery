@@ -20,7 +20,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 /// Default path for saved credentials
-pub const CREDENTIALS_PATH: &str = "/var/lib/hyper-wifi-setup/credentials.json";
+pub const CREDENTIALS_PATH: &str = "/var/lib/hyper-connect/credentials.json";
 
 /// Saved credentials for a network
 #[derive(Debug, Clone, Serialize, Deserialize)]

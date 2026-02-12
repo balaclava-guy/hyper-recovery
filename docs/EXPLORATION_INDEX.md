@@ -80,7 +80,7 @@
 ## Integration Checklist
 
 ### Phase 1: Create Script
-- [ ] Create `scripts/hyper-wifi-setup.py`
+- [ ] Create `scripts/hyper-connect.py`
 - [ ] Test script locally
 - [ ] Add docstring and error handling
 
@@ -102,8 +102,8 @@
 ### Phase 5: Build & Test
 - [ ] Build: `nix build .#usb`
 - [ ] Boot system
-- [ ] Verify service: `systemctl status hyper-wifi-setup`
-- [ ] Check logs: `journalctl -u hyper-wifi-setup`
+- [ ] Verify service: `systemctl status hyper-connect`
+- [ ] Check logs: `journalctl -u hyper-connect`
 - [ ] Test WiFi: `nmcli device wifi list`
 
 ---
@@ -196,8 +196,8 @@ nix build .#image-compressed # Compressed
 
 ### Testing
 ```bash
-systemctl status hyper-wifi-setup
-journalctl -u hyper-wifi-setup -n 50
+systemctl status hyper-connect
+journalctl -u hyper-connect -n 50
 nmcli device wifi list
 nmcli general status
 ```
@@ -241,7 +241,7 @@ cp result/iso/snosu-hyper-recovery-x86_64-linux.iso /path/to/ventoy/
 5. Build and test
 
 ### ✓ Integration Points
-- Script: `scripts/hyper-wifi-setup.py`
+- Script: `scripts/hyper-connect.py`
 - Package: `nix/packages/scripts/default.nix`
 - Service: `nix/modules/system/network.nix` (new)
 - Module: `nix/flake/images.nix`
@@ -249,7 +249,7 @@ cp result/iso/snosu-hyper-recovery-x86_64-linux.iso /path/to/ventoy/
 ### ✓ Service Lifecycle
 ```
 Boot → systemd-journald → network-online.target → 
-hyper-wifi-setup (oneshot) → multi-user.target → Ready
+hyper-connect (oneshot) → multi-user.target → Ready
 ```
 
 ---
@@ -263,7 +263,7 @@ hyper-wifi-setup (oneshot) → multi-user.target → Ready
 **A**: After `network-online.target`, before `multi-user.target`. Doesn't block boot.
 
 ### Q: How do I debug the service?
-**A**: Use `journalctl -u hyper-wifi-setup` to view logs.
+**A**: Use `journalctl -u hyper-connect` to view logs.
 
 ### Q: Can I use the existing color palette?
 **A**: Yes! Use `--snosu-blue: #0ea1fb` for primary, `--snosu-cyan: #48d7fb` for accents.

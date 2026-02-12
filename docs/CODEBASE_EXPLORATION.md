@@ -113,7 +113,7 @@ systemd.services.hyper-debug-serial = {
 ### Recommended WiFi Setup Service Pattern
 
 ```nix
-systemd.services.hyper-wifi-setup = {
+systemd.services.hyper-connect = {
   description = "WiFi Setup Service for Hyper Recovery";
   wantedBy = [ "multi-user.target" ];
   after = [ "systemd-journald.service" "network-online.target" ];
@@ -121,7 +121,7 @@ systemd.services.hyper-wifi-setup = {
   
   serviceConfig = {
     Type = "oneshot";
-    ExecStart = "${scripts.hyper-wifi-setup}/bin/hyper-wifi-setup";
+    ExecStart = "${scripts.hyper-connect}/bin/hyper-connect";
     StandardOutput = "journal";
     StandardError = "journal";
   };
@@ -149,17 +149,17 @@ The project uses **Nix derivations** for packaging. For Rust, follow this patter
 #### Option A: Simple Rust Binary (Cargo.toml in repo)
 
 ```nix
-# nix/packages/wifi-setup.nix
+# nix/packages/hyper-connect.nix
 { pkgs, lib }:
 
 pkgs.rustPlatform.buildRustPackage {
-  pname = "hyper-wifi-setup";
+  pname = "hyper-connect";
   version = "1.0.0";
   
-  src = ../../../src/hyper-wifi-setup;  # Path to Cargo.toml directory
+  src = ../../../src/hyper-connect;  # Path to Cargo.toml directory
   
   cargoLock = {
-    lockFile = ../../../src/hyper-wifi-setup/Cargo.lock;
+    lockFile = ../../../src/hyper-connect/Cargo.lock;
   };
   
   nativeBuildInputs = with pkgs; [
@@ -185,7 +185,7 @@ pkgs.rustPlatform.buildRustPackage {
 {
   perSystem = { pkgs, system, lib, ... }: {
     packages = lib.optionalAttrs pkgs.stdenv.isLinux {
-      hyper-wifi-setup = pkgs.callPackage ../../packages/wifi-setup.nix {};
+      hyper-connect = pkgs.callPackage ../../packages/hyper-connect.nix {};
     };
   };
 }
@@ -197,7 +197,7 @@ pkgs.rustPlatform.buildRustPackage {
 # nix/modules/system/base.nix
 let
   scripts = pkgs.callPackage ../../packages/scripts {};
-  wifiSetup = pkgs.callPackage ../../packages/wifi-setup.nix {};
+  wifiSetup = pkgs.callPackage ../../packages/hyper-connect.nix {};
 in
 {
   environment.systemPackages = with pkgs; [
@@ -641,12 +641,12 @@ usb-live-debug = inputs.nixpkgs.lib.nixosSystem {
 
 ### Option 1: Python Script (Recommended for Quick Integration)
 
-**File**: `scripts/hyper-wifi-setup.py`
+**File**: `scripts/hyper-connect.py`
 
 ```python
 #!/usr/bin/env python3
 """
-hyper-wifi-setup: Interactive WiFi setup for Hyper Recovery.
+hyper-connect: Interactive WiFi setup for Hyper Recovery.
 
 Provides a simple interface to configure WiFi networks using nmcli.
 """
@@ -681,9 +681,9 @@ if __name__ == "__main__":
 **Integration in scripts/default.nix**:
 
 ```nix
-hyper-wifi-setup = makePythonScript {
-  name = "hyper-wifi-setup";
-  script = ../../../scripts/hyper-wifi-setup.py;
+hyper-connect = makePythonScript {
+  name = "hyper-connect";
+  script = ../../../scripts/hyper-connect.py;
   runtimeInputs = with pkgs; [
     coreutils
     networkmanager
@@ -704,7 +704,7 @@ let
 in
 {
   # WiFi Setup Service
-  systemd.services.hyper-wifi-setup = {
+  systemd.services.hyper-connect = {
     description = "WiFi Setup Service for Hyper Recovery";
     wantedBy = [ "multi-user.target" ];
     after = [ "systemd-journald.service" "network-online.target" ];
@@ -712,7 +712,7 @@ in
     
     serviceConfig = {
       Type = "oneshot";
-      ExecStart = "${scripts.hyper-wifi-setup}/bin/hyper-wifi-setup";
+      ExecStart = "${scripts.hyper-connect}/bin/hyper-connect";
       StandardOutput = "journal";
       StandardError = "journal";
       RemainAfterExit = "yes";
@@ -747,7 +747,7 @@ Example structure:
 ```python
 #!/usr/bin/env python3
 """
-hyper-wifi-setup: Interactive WiFi setup TUI.
+hyper-connect: Interactive WiFi setup TUI.
 """
 
 import subprocess
@@ -776,13 +776,13 @@ def show_menu():
 
 ### Integration Checklist
 
-- [ ] Create `scripts/hyper-wifi-setup.py`
+- [ ] Create `scripts/hyper-connect.py`
 - [ ] Add to `nix/packages/scripts/default.nix`
 - [ ] Create `nix/modules/system/network.nix` (optional)
 - [ ] Add module to `nix/flake/images.nix`
 - [ ] Include in `environment.systemPackages` in base.nix
 - [ ] Test with `nix build .#usb`
-- [ ] Verify service starts: `systemctl status hyper-wifi-setup`
+- [ ] Verify service starts: `systemctl status hyper-connect`
 - [ ] Test WiFi connection: `nmcli device wifi list`
 
 ---
@@ -848,7 +848,7 @@ cp result/iso/snosu-hyper-recovery-x86_64-linux.iso /path/to/ventoy/partition/
 
 ### Recommended Approach
 
-1. **Create Python script** (`scripts/hyper-wifi-setup.py`)
+1. **Create Python script** (`scripts/hyper-connect.py`)
    - Use `nmcli` for WiFi operations
    - Provide both CLI and interactive modes
    - Handle errors gracefully
@@ -869,7 +869,7 @@ cp result/iso/snosu-hyper-recovery-x86_64-linux.iso /path/to/ventoy/partition/
 
 5. **Test & Verify**
    - Build: `nix build .#usb`
-   - Boot and verify: `systemctl status hyper-wifi-setup`
+   - Boot and verify: `systemctl status hyper-connect`
    - Test WiFi: `nmcli device wifi list`
 
 ### Color Palette for UI (if needed)

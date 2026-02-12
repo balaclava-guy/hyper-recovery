@@ -1,4 +1,4 @@
-# Nix package for hyper-wifi-setup
+# Nix package for hyper-connect
 { lib
 , rustPlatform
 , pkg-config
@@ -7,7 +7,7 @@
 }:
 
 rustPlatform.buildRustPackage rec {
-  pname = "hyper-wifi-setup";
+  pname = "hyper-connect";
   version = "0.1.0";
 
   src = ./.;

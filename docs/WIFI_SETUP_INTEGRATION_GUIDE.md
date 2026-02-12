@@ -25,7 +25,7 @@ let
   scripts = pkgs.callPackage ../../packages/scripts {};
 in
 {
-  systemd.services.hyper-wifi-setup = {
+  systemd.services.hyper-connect = {
     description = "WiFi Setup Service for Hyper Recovery";
     wantedBy = [ "multi-user.target" ];
     after = [ "systemd-journald.service" "network-online.target" ];
@@ -33,7 +33,7 @@ in
     
     serviceConfig = {
       Type = "oneshot";
-      ExecStart = "${scripts.hyper-wifi-setup}/bin/hyper-wifi-setup";
+      ExecStart = "${scripts.hyper-connect}/bin/hyper-connect";
       StandardOutput = "journal";
       StandardError = "journal";
       RemainAfterExit = "yes";
@@ -52,9 +52,9 @@ in
 
 ```nix
 # nix/packages/scripts/default.nix (add to existing)
-hyper-wifi-setup = makePythonScript {
-  name = "hyper-wifi-setup";
-  script = ../../../scripts/hyper-wifi-setup.py;
+hyper-connect = makePythonScript {
+  name = "hyper-connect";
+  script = ../../../scripts/hyper-connect.py;
   runtimeInputs = with pkgs; [
     coreutils
     networkmanager
@@ -68,7 +68,7 @@ hyper-wifi-setup = makePythonScript {
 ```python
 #!/usr/bin/env python3
 """
-hyper-wifi-setup: WiFi setup for Hyper Recovery.
+hyper-connect: WiFi setup for Hyper Recovery.
 """
 
 import subprocess
@@ -107,7 +107,7 @@ if __name__ == "__main__":
 
 ### 5. Integration Checklist
 
-- [ ] Create `scripts/hyper-wifi-setup.py`
+- [ ] Create `scripts/hyper-connect.py`
 - [ ] Add to `nix/packages/scripts/default.nix`
 - [ ] Create `nix/modules/system/network.nix`
 - [ ] Add to `nix/flake/images.nix`:
@@ -125,11 +125,11 @@ if __name__ == "__main__":
   ```nix
   environment.systemPackages = with pkgs; [
     # ... existing packages ...
-    scripts.hyper-wifi-setup
+    scripts.hyper-connect
   ];
   ```
 - [ ] Build: `nix build .#usb`
-- [ ] Test: Boot and run `systemctl status hyper-wifi-setup`
+- [ ] Test: Boot and run `systemctl status hyper-connect`
 
 ## Color Palette (if UI needed)
 
@@ -170,7 +170,7 @@ systemd-journald.service starts
   ↓
 network-online.target reached
   ↓
-hyper-wifi-setup service starts (Type=oneshot)
+hyper-connect service starts (Type=oneshot)
   ↓
 Script runs, configures WiFi
   ↓
@@ -185,13 +185,13 @@ System ready
 
 ```bash
 # Check service status
-systemctl status hyper-wifi-setup
+systemctl status hyper-connect
 
 # View service logs
-journalctl -u hyper-wifi-setup -n 50
+journalctl -u hyper-connect -n 50
 
 # Run script manually
-/run/current-system/sw/bin/hyper-wifi-setup
+/run/current-system/sw/bin/hyper-connect
 
 # Check NetworkManager status
 nmcli general status
@@ -204,7 +204,7 @@ nmcli device
 
 | File | Purpose |
 |------|---------|
-| `scripts/hyper-wifi-setup.py` | Main WiFi setup script |
+| `scripts/hyper-connect.py` | Main WiFi setup script |
 | `nix/packages/scripts/default.nix` | Package definition |
 | `nix/modules/system/network.nix` | Systemd service definition |
 | `nix/flake/images.nix` | Module import |

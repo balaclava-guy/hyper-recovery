@@ -1,4 +1,4 @@
-# NixOS module for hyper-wifi-setup
+# NixOS module for hyper-connect
 # Provides automatic WiFi configuration via captive portal and TUI
 
 { config, lib, pkgs, ... }:
@@ -6,12 +6,12 @@
 with lib;
 
 let
-  cfg = config.services.hyper-wifi-setup;
-  hyper-wifi-setup = pkgs.callPackage ../../packages/hyper-wifi-setup.nix {};
+  cfg = config.services.hyper-connect;
+  hyperConnect = pkgs.callPackage ../../packages/hyper-connect.nix {};
 in
 {
-  options.services.hyper-wifi-setup = {
-    enable = mkEnableOption "Hyper WiFi Setup service";
+  options.services.hyper-connect = {
+    enable = mkEnableOption "Hyper Connect service";
 
     interface = mkOption {
       type = types.str;
@@ -53,7 +53,7 @@ in
   config = mkIf cfg.enable {
     # Ensure required packages are available
     environment.systemPackages = [
-      hyper-wifi-setup
+      hyperConnect
       pkgs.hostapd
       pkgs.dnsmasq
       pkgs.iw
@@ -61,18 +61,18 @@ in
     ];
 
     # Main daemon service
-    systemd.services.hyper-wifi-setup = {
-      description = "Hyper WiFi Setup Daemon";
+    systemd.services.hyper-connect = {
+      description = "Hyper Connect Daemon";
       wantedBy = [ "multi-user.target" ];
       after = [ "NetworkManager.service" "systemd-resolved.service" ];
       wants = [ "NetworkManager.service" ];
 
       serviceConfig = {
         Type = "simple";
-        ExecStart = "${hyper-wifi-setup}/bin/hyper-wifi-setup daemon --interface ${cfg.interface} --ssid ${cfg.ssid} --ap-ip ${cfg.apIp} --port ${toString cfg.port} --grace-period ${toString cfg.gracePeriod}";
+        ExecStart = "${hyperConnect}/bin/hyper-connect daemon --interface ${cfg.interface} --ssid ${cfg.ssid} --ap-ip ${cfg.apIp} --port ${toString cfg.port} --grace-period ${toString cfg.gracePeriod}";
         Restart = "on-failure";
         RestartSec = "5s";
-        RuntimeDirectory = "hyper-wifi-setup";
+        RuntimeDirectory = "hyper-connect";
         RuntimeDirectoryMode = "0755";
 
         # Security hardening (limited due to network requirements)
@@ -95,18 +95,18 @@ in
     };
 
     # TUI (optional)
-    systemd.services.hyper-wifi-setup-tui = mkIf cfg.autoStartTui {
-      description = "Hyper WiFi Setup TUI";
+    systemd.services.hyper-connect-tui = mkIf cfg.autoStartTui {
+      description = "Hyper Connect TUI";
       wantedBy = [ "multi-user.target" ];
-      after = [ "hyper-wifi-setup.service" "plymouth-quit.service" "plymouth-quit-wait.service" ];
-      wants = [ "hyper-wifi-setup.service" ];
+      after = [ "hyper-connect.service" "plymouth-quit.service" "plymouth-quit-wait.service" ];
+      wants = [ "hyper-connect.service" ];
       before = [ "getty@tty1.service" ];
       conflicts = [ "getty@tty1.service" ];
 
       serviceConfig = {
         Type = "simple";
         ExecStartPre = "${pkgs.kbd}/bin/chvt 1";
-        ExecStart = "${hyper-wifi-setup}/bin/hyper-wifi-setup tui";
+        ExecStart = "${hyperConnect}/bin/hyper-connect tui";
         Restart = "no";
 
         StandardInput = "tty-force";
@@ -125,7 +125,7 @@ in
 
     # Create credentials directory
     systemd.tmpfiles.rules = [
-      "d /var/lib/hyper-wifi-setup 0700 root root -"
+      "d /var/lib/hyper-connect 0700 root root -"
     ];
 
     # Firewall rules for captive portal

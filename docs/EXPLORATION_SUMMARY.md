@@ -54,7 +54,7 @@ systemd.services.<name> = {
 ### Recommended WiFi Setup Service Pattern
 
 ```nix
-systemd.services.hyper-wifi-setup = {
+systemd.services.hyper-connect = {
   description = "WiFi Setup Service for Hyper Recovery";
   wantedBy = [ "multi-user.target" ];
   after = [ "systemd-journald.service" "network-online.target" ];
@@ -62,7 +62,7 @@ systemd.services.hyper-wifi-setup = {
   
   serviceConfig = {
     Type = "oneshot";
-    ExecStart = "${scripts.hyper-wifi-setup}/bin/hyper-wifi-setup";
+    ExecStart = "${scripts.hyper-connect}/bin/hyper-connect";
     StandardOutput = "journal";
     StandardError = "journal";
     RemainAfterExit = "yes";
@@ -81,14 +81,14 @@ systemd.services.hyper-wifi-setup = {
 ### How to Add Rust (if needed)
 
 ```nix
-# nix/packages/wifi-setup.nix
+# nix/packages/hyper-connect.nix
 { pkgs, lib }:
 
 pkgs.rustPlatform.buildRustPackage {
-  pname = "hyper-wifi-setup";
+  pname = "hyper-connect";
   version = "1.0.0";
-  src = ../../../src/hyper-wifi-setup;
-  cargoLock = { lockFile = ../../../src/hyper-wifi-setup/Cargo.lock; };
+  src = ../../../src/hyper-connect;
+  cargoLock = { lockFile = ../../../src/hyper-connect/Cargo.lock; };
   # ... rest of config
 }
 ```
@@ -226,7 +226,7 @@ modules = [
 ### Recommended Implementation Path
 
 #### Step 1: Create Python Script
-**File**: `scripts/hyper-wifi-setup.py`
+**File**: `scripts/hyper-connect.py`
 
 ```python
 #!/usr/bin/env python3
@@ -264,9 +264,9 @@ if __name__ == "__main__":
 **File**: `nix/packages/scripts/default.nix`
 
 ```nix
-hyper-wifi-setup = makePythonScript {
-  name = "hyper-wifi-setup";
-  script = ../../../scripts/hyper-wifi-setup.py;
+hyper-connect = makePythonScript {
+  name = "hyper-connect";
+  script = ../../../scripts/hyper-connect.py;
   runtimeInputs = with pkgs; [
     coreutils
     networkmanager
@@ -285,7 +285,7 @@ let
   scripts = pkgs.callPackage ../../packages/scripts {};
 in
 {
-  systemd.services.hyper-wifi-setup = {
+  systemd.services.hyper-connect = {
     description = "WiFi Setup Service for Hyper Recovery";
     wantedBy = [ "multi-user.target" ];
     after = [ "systemd-journald.service" "network-online.target" ];
@@ -293,7 +293,7 @@ in
     
     serviceConfig = {
       Type = "oneshot";
-      ExecStart = "${scripts.hyper-wifi-setup}/bin/hyper-wifi-setup";
+      ExecStart = "${scripts.hyper-connect}/bin/hyper-connect";
       StandardOutput = "journal";
       StandardError = "journal";
       RemainAfterExit = "yes";
@@ -325,8 +325,8 @@ modules = [
 nix build .#usb
 
 # Boot and verify
-systemctl status hyper-wifi-setup
-journalctl -u hyper-wifi-setup -n 50
+systemctl status hyper-connect
+journalctl -u hyper-connect -n 50
 
 # Test WiFi
 nmcli device wifi list
@@ -401,7 +401,7 @@ cp result/iso/snosu-hyper-recovery-x86_64-linux.iso /path/to/ventoy/
 - Branding/theming system in place
 
 ### ✓ Integration Points
-1. **Script**: `scripts/hyper-wifi-setup.py`
+1. **Script**: `scripts/hyper-connect.py`
 2. **Package**: Add to `nix/packages/scripts/default.nix`
 3. **Service**: Create `nix/modules/system/network.nix`
 4. **Module**: Import in `nix/flake/images.nix`
@@ -410,13 +410,13 @@ cp result/iso/snosu-hyper-recovery-x86_64-linux.iso /path/to/ventoy/
 ### ✓ Service Lifecycle
 ```
 Boot → systemd-journald → network-online.target → 
-hyper-wifi-setup (oneshot) → multi-user.target → Ready
+hyper-connect (oneshot) → multi-user.target → Ready
 ```
 
 ### ✓ Testing
 ```bash
-systemctl status hyper-wifi-setup
-journalctl -u hyper-wifi-setup
+systemctl status hyper-connect
+journalctl -u hyper-connect
 nmcli device wifi list
 ```
 
@@ -433,7 +433,7 @@ nmcli device wifi list
 
 ## Next Steps
 
-1. Create `scripts/hyper-wifi-setup.py` with desired functionality
+1. Create `scripts/hyper-connect.py` with desired functionality
 2. Add to `nix/packages/scripts/default.nix`
 3. Create `nix/modules/system/network.nix`
 4. Update `nix/flake/images.nix` to import network module

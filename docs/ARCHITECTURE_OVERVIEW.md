@@ -312,7 +312,7 @@ System Ready
 
 ```
 1. Script Location
-   scripts/hyper-wifi-setup.py
+   scripts/hyper-connect.py
    └─ Uses: nmcli, iw, subprocess
 
 2. Package Definition
@@ -331,7 +331,7 @@ System Ready
 
 5. System Packages (optional)
    nix/modules/system/base.nix
-   └─ Add: scripts.hyper-wifi-setup
+   └─ Add: scripts.hyper-connect
 ```
 
 ---

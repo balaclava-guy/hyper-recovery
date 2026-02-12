@@ -1,4 +1,4 @@
-# Nix package for hyper-wifi-setup
+# Nix package for hyper-connect
 { lib
 , rustPlatform
 , pkg-config
@@ -7,13 +7,13 @@
 }:
 
 rustPlatform.buildRustPackage rec {
-  pname = "hyper-wifi-setup";
+  pname = "hyper-connect";
   version = "0.1.0";
 
-  src = ../../pkgs/hyper-wifi-setup;
+  src = ../../pkgs/hyper-connect;
 
   cargoLock = {
-    lockFile = ../../pkgs/hyper-wifi-setup/Cargo.lock;
+    lockFile = ../../pkgs/hyper-connect/Cargo.lock;
   };
 
   nativeBuildInputs = [

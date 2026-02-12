@@ -1,12 +1,12 @@
 [package]
-name = "hyper-wifi-setup"
+name = "hyper-connect"
 version = "0.1.0"
 edition = "2021"
 description = "WiFi setup daemon with TUI and captive portal for Hyper Recovery"
 license = "MIT"
 
 [[bin]]
-name = "hyper-wifi-setup"
+name = "hyper-connect"
 path = "src/main.rs"
 
 [dependencies]

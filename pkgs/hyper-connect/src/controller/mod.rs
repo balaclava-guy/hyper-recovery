@@ -167,7 +167,7 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
     }
 
     // Start IPC server
-    let socket_path = "/run/hyper-wifi-setup.sock";
+    let socket_path = "/run/hyper-connect.sock";
     let _ = std::fs::remove_file(socket_path);
     let listener = UnixListener::bind(socket_path)?;
     tracing::info!(path = socket_path, "IPC server listening");

@@ -291,7 +291,7 @@ def collect_journal_logs(out_dir: Path) -> None:
     
     # WiFi setup logs
     run_command(
-        ["journalctl", "-b", "-u", "hyper-wifi-setup", "--no-pager"],
+        ["journalctl", "-b", "-u", "hyper-connect", "--no-pager"],
         out_dir / "journal-wifi.txt",
         "Journal (WiFi Setup)"
     )

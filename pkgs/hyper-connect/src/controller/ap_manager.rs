@@ -10,9 +10,9 @@ use zbus::Connection;
 // Global handles for cleanup
 static HOSTAPD_HANDLE: OnceCell<Mutex<Option<Child>>> = OnceCell::const_new();
 static DNSMASQ_HANDLE: OnceCell<Mutex<Option<Child>>> = OnceCell::const_new();
-const RUNTIME_DIR: &str = "/run/hyper-wifi-setup";
-const HOSTAPD_CONF_PATH: &str = "/run/hyper-wifi-setup/hyper-hostapd.conf";
-const DNSMASQ_CONF_PATH: &str = "/run/hyper-wifi-setup/hyper-dnsmasq.conf";
+const RUNTIME_DIR: &str = "/run/hyper-connect";
+const HOSTAPD_CONF_PATH: &str = "/run/hyper-connect/hyper-hostapd.conf";
+const DNSMASQ_CONF_PATH: &str = "/run/hyper-connect/hyper-dnsmasq.conf";
 const NM_DEST: &str = "org.freedesktop.NetworkManager";
 const NM_PATH: &str = "/org/freedesktop/NetworkManager";
 const NM_IFACE: &str = "org.freedesktop.NetworkManager";
@@ -198,8 +198,8 @@ pub async fn stop_ap() -> Result<()> {
     // Clean up temp files
     let _ = tokio::fs::remove_file(HOSTAPD_CONF_PATH).await;
     let _ = tokio::fs::remove_file(DNSMASQ_CONF_PATH).await;
-    let _ = tokio::fs::remove_file("/run/hyper-wifi-setup/dnsmasq.leases").await;
-    let _ = tokio::fs::remove_file("/run/hyper-wifi-setup/dnsmasq.pid").await;
+    let _ = tokio::fs::remove_file("/run/hyper-connect/dnsmasq.leases").await;
+    let _ = tokio::fs::remove_file("/run/hyper-connect/dnsmasq.pid").await;
 
     tracing::info!("Access point stopped");
     Ok(())
