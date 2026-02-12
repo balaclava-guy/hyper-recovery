@@ -15,8 +15,8 @@ in
 
     interface = mkOption {
       type = types.str;
-      default = "wlan0";
-      description = "WiFi interface to use for AP mode";
+      default = "auto";
+      description = "WiFi interface to use for AP mode (or 'auto' to detect)";
     };
 
     ssid = mkOption {
@@ -27,8 +27,8 @@ in
 
     apIp = mkOption {
       type = types.str;
-      default = "192.168.42.1";
-      description = "IP address for the AP interface";
+      default = "auto";
+      description = "AP gateway IP address (or 'auto' to pick a non-conflicting subnet)";
     };
 
     port = mkOption {
@@ -46,7 +46,7 @@ in
     autoStartTui = mkOption {
       type = types.bool;
       default = false;
-      description = "Automatically start TUI on tty2";
+      description = "Automatically start TUI and focus tty1";
     };
   };
 
@@ -94,26 +94,38 @@ in
       ];
     };
 
-    # TUI on tty2 (optional)
+    # TUI (optional)
     systemd.services.hyper-wifi-setup-tui = mkIf cfg.autoStartTui {
       description = "Hyper WiFi Setup TUI";
-      after = [ "hyper-wifi-setup.service" "getty@tty2.service" ];
+      after = [ "hyper-wifi-setup.service" "plymouth-quit.service" "plymouth-quit-wait.service" ];
       wants = [ "hyper-wifi-setup.service" ];
-      wantedBy = [ "multi-user.target" ];
+      before = [ "getty@tty1.service" ];
+      conflicts = [ "getty@tty1.service" ];
 
       serviceConfig = {
         Type = "simple";
-        ExecStartPre = "${pkgs.bash}/bin/bash -lc 'for i in {1..60}; do [ -S /run/hyper-wifi-setup.sock ] && exit 0; sleep 1; done; echo IPC socket not ready >&2; exit 1'";
+        ExecStartPre = "${pkgs.kbd}/bin/chvt 1";
         ExecStart = "${hyper-wifi-setup}/bin/hyper-wifi-setup tui";
         Restart = "on-failure";
         RestartSec = "2s";
-        
-        StandardInput = "tty";
+
+        StandardInput = "tty-force";
         StandardOutput = "tty";
-        TTYPath = "/dev/tty2";
+        StandardError = "journal";
+        TTYPath = "/dev/tty1";
         TTYReset = true;
         TTYVHangup = true;
         TTYVTDisallocate = true;
+      };
+    };
+
+    systemd.paths.hyper-wifi-setup-tui = mkIf cfg.autoStartTui {
+      description = "Start Hyper WiFi Setup TUI when IPC socket appears";
+      wantedBy = [ "multi-user.target" ];
+
+      pathConfig = {
+        PathExists = "/run/hyper-wifi-setup.sock";
+        Unit = "hyper-wifi-setup-tui.service";
       };
     };
 

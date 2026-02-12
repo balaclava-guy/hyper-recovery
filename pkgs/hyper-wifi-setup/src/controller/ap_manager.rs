@@ -1,6 +1,7 @@
 //! Access Point management using hostapd and dnsmasq
 
 use anyhow::{bail, Context, Result};
+use std::net::Ipv4Addr;
 use std::process::Stdio;
 use tokio::process::{Child, Command};
 use tokio::sync::{Mutex, OnceCell};
@@ -74,6 +75,13 @@ wpa=0
         .await
         .context("Failed to create runtime directory")?;
 
+    let ap_ip_addr: Ipv4Addr = ap_ip
+        .parse()
+        .with_context(|| format!("Invalid AP IP address: '{}'", ap_ip))?;
+    let [a, b, c, _] = ap_ip_addr.octets();
+    let dhcp_start = format!("{}.{}.{}.10", a, b, c);
+    let dhcp_end = format!("{}.{}.{}.250", a, b, c);
+
     // Create dnsmasq config
     let dnsmasq_conf = format!(
         r#"interface={}
@@ -81,12 +89,12 @@ listen-address={}
 bind-interfaces
 dhcp-leasefile={}/dnsmasq.leases
 pid-file={}/dnsmasq.pid
-dhcp-range=192.168.42.10,192.168.42.250,255.255.255.0,12h
+dhcp-range={},{},255.255.255.0,12h
 dhcp-option=option:router,{}
 dhcp-option=option:dns-server,{}
 address=/#/{}
 "#,
-        interface, ap_ip, runtime_dir, runtime_dir, ap_ip, ap_ip, ap_ip
+        interface, ap_ip, runtime_dir, runtime_dir, dhcp_start, dhcp_end, ap_ip, ap_ip, ap_ip
     );
 
     let dnsmasq_conf_path = "/tmp/hyper-dnsmasq.conf";

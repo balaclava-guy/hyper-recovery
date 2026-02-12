@@ -25,7 +25,7 @@ enum Commands {
     /// Run the WiFi setup daemon (controller + web portal)
     Daemon {
         /// WiFi interface to use for AP
-        #[arg(long, default_value = "wlan0")]
+        #[arg(long, default_value = "auto")]
         interface: String,
 
         /// AP SSID
@@ -33,7 +33,7 @@ enum Commands {
         ssid: String,
 
         /// AP IP address
-        #[arg(long, default_value = "192.168.42.1")]
+        #[arg(long, default_value = "auto")]
         ap_ip: String,
 
         /// Web portal port

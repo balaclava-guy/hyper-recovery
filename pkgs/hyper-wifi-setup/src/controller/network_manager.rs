@@ -2,54 +2,248 @@
 
 use super::NetworkInfo;
 use anyhow::{Context, Result};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::net::Ipv4Addr;
 use std::path::Path;
+use std::process::Command;
 use zbus::Connection;
 use zvariant::Value;
 
-/// Validate configured wireless interface and report actionable driver errors.
-pub fn validate_wireless_interface(interface: &str) -> Result<()> {
-    let iface_path = Path::new("/sys/class/net").join(interface);
+const DEFAULT_AP_IP: &str = "192.168.42.1";
+const AP_IP_CANDIDATES: [&str; 5] = [
+    "192.168.42.1",
+    "10.42.0.1",
+    "172.20.42.1",
+    "192.168.88.1",
+    "10.123.0.1",
+];
 
-    if iface_path.exists() {
-        if !iface_path.join("wireless").exists() {
-            anyhow::bail!(
-                "Interface '{}' exists but is not reported as wireless (/sys/class/net/{}/wireless missing)",
-                interface,
-                interface
-            );
+#[derive(Debug, Clone)]
+struct WirelessInterface {
+    name: String,
+    driver_bound: bool,
+    device_hint: String,
+}
+
+/// Resolve and validate wireless interface selection.
+///
+/// Behavior:
+/// - `auto` picks a detected wireless interface
+/// - explicit interface is used if valid
+/// - if explicit interface is missing but exactly one wireless interface exists, fallback to it
+pub fn resolve_wireless_interface(configured: &str) -> Result<String> {
+    let configured = configured.trim();
+    let interfaces = list_wireless_interfaces();
+
+    if configured.eq_ignore_ascii_case("auto") || configured.is_empty() {
+        return choose_auto_interface(&interfaces);
+    }
+
+    if let Some(iface) = interfaces.iter().find(|iface| iface.name == configured) {
+        if iface.driver_bound {
+            return Ok(iface.name.clone());
         }
 
-        if !iface_path.join("device/driver").exists() {
-            let device = fs::read_link(iface_path.join("device"))
-                .ok()
-                .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
-                .unwrap_or_else(|| "unknown-device".to_string());
+        anyhow::bail!(
+            "Wireless card detected for interface '{}' (device: {}) but no kernel driver is bound. This usually indicates missing firmware or driver support for the adapter.",
+            iface.name,
+            iface.device_hint
+        );
+    }
 
-            anyhow::bail!(
-                "Wireless card detected for interface '{}' (device: {}) but no kernel driver is bound. This usually indicates missing firmware or driver support for the adapter.",
-                interface,
-                device
-            );
-        }
+    let detected_wireless: Vec<&WirelessInterface> = interfaces
+        .iter()
+        .filter(|iface| !iface.name.starts_with("p2p-"))
+        .collect();
 
-        return Ok(());
+    let viable_interfaces: Vec<&WirelessInterface> = detected_wireless
+        .iter()
+        .copied()
+        .filter(|iface| iface.driver_bound)
+        .collect();
+
+    if viable_interfaces.len() == 1 {
+        let detected = viable_interfaces[0];
+        tracing::warn!(
+            configured = configured,
+            detected = %detected.name,
+            "Configured interface not found; falling back to detected wireless interface"
+        );
+        return Ok(detected.name.clone());
+    }
+
+    if !viable_interfaces.is_empty() {
+        let names = viable_interfaces
+            .iter()
+            .map(|iface| iface.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        anyhow::bail!(
+            "Configured interface '{}' was not found. Detected wireless interfaces: {}. Set --interface explicitly or use --interface auto.",
+            configured,
+            names
+        );
+    }
+
+    if !detected_wireless.is_empty() {
+        let names = detected_wireless
+            .iter()
+            .map(|iface| format!("{} ({})", iface.name, iface.device_hint))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        anyhow::bail!(
+            "Configured interface '{}' was not found. Wireless interface(s) detected but no kernel driver is bound: {}. This usually indicates missing firmware or driver support.",
+            configured,
+            names
+        );
     }
 
     let unbound_wifi = detect_unbound_pci_wifi_devices();
     if !unbound_wifi.is_empty() {
         anyhow::bail!(
-            "Configured interface '{}' was not found. Detected wireless PCI device(s) without loaded driver: {}. This usually means firmware/driver for the adapter is missing.",
-            interface,
+            "No wireless interface is currently available. Detected wireless PCI device(s) without loaded driver: {}. This usually means firmware/driver for the adapter is missing.",
             unbound_wifi.join(", ")
         );
     }
 
     anyhow::bail!(
-        "Configured interface '{}' was not found and no wireless interface is currently available",
-        interface
+        "Configured interface '{}' was not found and no wireless interfaces were detected",
+        configured
     );
+}
+
+/// Resolve AP IP address, using conflict-aware selection when `auto` is requested.
+pub fn resolve_ap_ip(configured: &str) -> Result<String> {
+    let configured = configured.trim();
+    if !configured.eq_ignore_ascii_case("auto") {
+        let ip: Ipv4Addr = configured
+            .parse()
+            .with_context(|| format!("Invalid AP IP address: '{}'", configured))?;
+        return Ok(ip.to_string());
+    }
+
+    let occupied = occupied_ipv4_prefixes();
+    for candidate in AP_IP_CANDIDATES {
+        let Ok(ip) = candidate.parse::<Ipv4Addr>() else {
+            continue;
+        };
+        let [a, b, c, _] = ip.octets();
+        if !occupied.contains(&(a, b, c)) {
+            tracing::info!(ap_ip = %candidate, "Selected AP subnet automatically");
+            return Ok(candidate.to_string());
+        }
+    }
+
+    tracing::warn!(
+        fallback = DEFAULT_AP_IP,
+        "All preferred AP subnets overlap with existing addresses; falling back to default"
+    );
+    Ok(DEFAULT_AP_IP.to_string())
+}
+
+fn choose_auto_interface(interfaces: &[WirelessInterface]) -> Result<String> {
+    let mut viable_interfaces = interfaces
+        .iter()
+        .filter(|iface| iface.driver_bound && !iface.name.starts_with("p2p-"))
+        .collect::<Vec<_>>();
+
+    viable_interfaces.sort_by(|a, b| a.name.cmp(&b.name));
+
+    if let Some(interface) = viable_interfaces.first() {
+        tracing::info!(interface = %interface.name, "Auto-selected wireless interface");
+        return Ok(interface.name.clone());
+    }
+
+    let without_driver = interfaces
+        .iter()
+        .filter(|iface| !iface.driver_bound && !iface.name.starts_with("p2p-"))
+        .map(|iface| format!("{} ({})", iface.name, iface.device_hint))
+        .collect::<Vec<_>>();
+
+    if !without_driver.is_empty() {
+        anyhow::bail!(
+            "Wireless interface(s) detected but no kernel driver is bound: {}. This usually indicates missing firmware or driver support.",
+            without_driver.join(", ")
+        );
+    }
+
+    let unbound_wifi = detect_unbound_pci_wifi_devices();
+    if !unbound_wifi.is_empty() {
+        anyhow::bail!(
+            "No usable wireless interface found. Detected wireless PCI device(s) without loaded driver: {}. This usually means firmware/driver for the adapter is missing.",
+            unbound_wifi.join(", ")
+        );
+    }
+
+    anyhow::bail!("No usable wireless interfaces detected")
+}
+
+fn list_wireless_interfaces() -> Vec<WirelessInterface> {
+    let mut interfaces = Vec::new();
+    let Ok(entries) = fs::read_dir("/sys/class/net") else {
+        return interfaces;
+    };
+
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let iface_path = entry.path();
+        if !iface_path.join("wireless").exists() {
+            continue;
+        }
+
+        let driver_bound = iface_path.join("device/driver").exists();
+        let device_hint = fs::read_link(iface_path.join("device"))
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+            .unwrap_or_else(|| "unknown-device".to_string());
+
+        interfaces.push(WirelessInterface {
+            name,
+            driver_bound,
+            device_hint,
+        });
+    }
+
+    interfaces
+}
+
+fn occupied_ipv4_prefixes() -> HashSet<(u8, u8, u8)> {
+    let mut prefixes = HashSet::new();
+
+    let Ok(output) = Command::new("ip")
+        .args(["-4", "-o", "addr", "show"])
+        .output()
+    else {
+        return prefixes;
+    };
+
+    if !output.status.success() {
+        return prefixes;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        for token in line.split_whitespace() {
+            if !token.contains('/') {
+                continue;
+            }
+
+            let Some(address) = token.split('/').next() else {
+                continue;
+            };
+
+            if let Ok(ip) = address.parse::<Ipv4Addr>() {
+                let [a, b, c, _] = ip.octets();
+                prefixes.insert((a, b, c));
+                break;
+            }
+        }
+    }
+
+    prefixes
 }
 
 fn detect_unbound_pci_wifi_devices() -> Vec<String> {

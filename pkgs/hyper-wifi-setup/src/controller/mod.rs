@@ -8,7 +8,7 @@ pub mod state;
 
 pub use state::{ConnectionStatus, NetworkInfo, WifiState, WifiStateSnapshot};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::sync::Arc;
 use tokio::net::UnixListener;
 use tokio::signal;
@@ -45,9 +45,14 @@ pub enum ControlCommand {
 
 /// Run the daemon
 pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
+    let mut config = config;
+    config.interface = network_manager::resolve_wireless_interface(&config.interface)?;
+    config.ap_ip = network_manager::resolve_ap_ip(&config.ap_ip)?;
+
     tracing::info!(
         interface = %config.interface,
         ssid = %config.ssid,
+        ap_ip = %config.ap_ip,
         "Initializing WiFi controller"
     );
 
@@ -61,13 +66,6 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
         state_tx,
         command_tx: command_tx.clone(),
     });
-
-    network_manager::validate_wireless_interface(&app_state.config.interface).with_context(|| {
-        format!(
-            "WiFi interface '{}' is not usable for AP setup",
-            app_state.config.interface
-        )
-    })?;
 
     // Check for existing connectivity
     tracing::info!("Checking for existing network connectivity...");
