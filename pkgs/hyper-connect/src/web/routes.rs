@@ -101,7 +101,9 @@ pub async fn api_backend(
 ) -> impl IntoResponse {
     let result = state
         .command_tx
-        .send(ControlCommand::SwitchBackend { backend: req.backend })
+        .send(ControlCommand::SwitchBackend {
+            backend: req.backend,
+        })
         .await;
 
     match result {

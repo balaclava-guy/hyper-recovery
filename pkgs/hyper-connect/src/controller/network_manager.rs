@@ -31,9 +31,13 @@ const NM_80211_AP_FLAGS_PRIVACY: u32 = 0x1;
 
 /// Parse the active NetworkManager WiFi backend from `NetworkManager --print-config`.
 pub async fn current_wifi_backend() -> Result<WifiBackend> {
-    let output = tokio::task::spawn_blocking(|| Command::new("NetworkManager").arg("--print-config").output())
-        .await
-        .context("Failed to join NetworkManager config probe")??;
+    let output = tokio::task::spawn_blocking(|| {
+        Command::new("NetworkManager")
+            .arg("--print-config")
+            .output()
+    })
+    .await
+    .context("Failed to join NetworkManager config probe")??;
 
     if !output.status.success() {
         anyhow::bail!("NetworkManager --print-config failed");
@@ -455,6 +459,15 @@ pub async fn scan_networks(interface: &str) -> Result<Vec<NetworkInfo>> {
 /// Connect to a WiFi network
 pub async fn connect_to_network(interface: &str, ssid: &str, password: &str) -> Result<()> {
     tracing::info!(interface = %interface, ssid = %ssid, "Connecting to WiFi network");
+
+    // During AP mode we stop iwd and mark the device unmanaged to allow hostapd
+    // to take exclusive control. Ensure iwd is back before asking NetworkManager
+    // to activate a station connection.
+    let _ = tokio::process::Command::new("systemctl")
+        .args(["start", "iwd.service"])
+        .output()
+        .await;
+
     let connection = Connection::system().await?;
     let device_path = get_wifi_device_path(&connection, interface).await?;
     let device_proxy =

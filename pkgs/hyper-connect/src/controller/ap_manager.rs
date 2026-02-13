@@ -2,7 +2,6 @@
 
 use anyhow::{bail, Context, Result};
 use std::net::Ipv4Addr;
-use std::process::Stdio;
 use tokio::process::{Child, Command};
 use tokio::sync::{Mutex, OnceCell};
 use zbus::Connection;
@@ -27,35 +26,29 @@ pub async fn start_ap(interface: &str, ssid: &str, ap_ip: &str) -> Result<()> {
         "Starting access point"
     );
 
-    prepare_device_for_ap(interface).await;
+    let result = start_ap_inner(interface, ssid, ap_ip).await;
+    if let Err(err) = result {
+        tracing::warn!(error = %err, "AP start failed; attempting to restore WiFi services");
+        let _ = stop_ap().await;
+        let _ = restore_device_after_ap(interface).await;
+        return Err(err);
+    }
 
-    // Bring interface down, set mode, bring up
+    Ok(())
+}
+
+async fn start_ap_inner(interface: &str, ssid: &str, ap_ip: &str) -> Result<()> {
+    prepare_device_for_ap(interface).await?;
+
+    // Put the interface into a clean state before hostapd touches it.
     let _ = Command::new("ip")
         .args(["link", "set", interface, "down"])
         .output()
         .await;
-
-    // Configure IP address
     let _ = Command::new("ip")
         .args(["addr", "flush", "dev", interface])
         .output()
         .await;
-
-    Command::new("ip")
-        .args(["addr", "add", &format!("{}/24", ap_ip), "dev", interface])
-        .output()
-        .await
-        .context("Failed to set IP address")?;
-
-    Command::new("ip")
-        .args(["link", "set", interface, "up"])
-        .output()
-        .await
-        .context("Failed to bring interface up")?;
-
-    // Wait for the IP address to be fully assigned before proceeding.
-    // This prevents dnsmasq from failing with "Cannot assign requested address".
-    wait_for_ip_assignment(interface, ap_ip).await?;
 
     // Create hostapd config
     let hostapd_conf = format!(
@@ -90,8 +83,7 @@ wpa=0
     // Create dnsmasq config
     let dnsmasq_conf = format!(
         r#"interface={}
-listen-address={}
-bind-interfaces
+bind-dynamic
 dhcp-leasefile={}/dnsmasq.leases
 pid-file={}/dnsmasq.pid
 dhcp-range={},{},255.255.255.0,12h
@@ -99,20 +91,19 @@ dhcp-option=option:router,{}
 dhcp-option=option:dns-server,{}
 address=/#/{}
 "#,
-        interface, ap_ip, RUNTIME_DIR, RUNTIME_DIR, dhcp_start, dhcp_end, ap_ip, ap_ip, ap_ip
+        interface, RUNTIME_DIR, RUNTIME_DIR, dhcp_start, dhcp_end, ap_ip, ap_ip, ap_ip
     );
 
     tokio::fs::write(DNSMASQ_CONF_PATH, &dnsmasq_conf)
         .await
         .context("Failed to write dnsmasq config")?;
 
-    // Start hostapd
+    // Start hostapd. It may toggle the interface state while switching to AP mode,
+    // so we delay assigning the AP IP until hostapd is stable.
     tracing::info!("Starting hostapd");
     let mut hostapd = Command::new("hostapd")
         .arg("-d")
         .arg(HOSTAPD_CONF_PATH)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
         .spawn()
         .context("Failed to start hostapd")?;
 
@@ -134,14 +125,28 @@ address=/#/{}
         *guard = Some(hostapd);
     }
 
+    // Configure IP address after hostapd has taken control of the interface.
+    Command::new("ip")
+        .args(["addr", "add", &format!("{}/24", ap_ip), "dev", interface])
+        .output()
+        .await
+        .context("Failed to set IP address")?;
+
+    Command::new("ip")
+        .args(["link", "set", interface, "up"])
+        .output()
+        .await
+        .context("Failed to bring interface up")?;
+
+    // Wait for the IP address to be fully assigned before starting dnsmasq.
+    wait_for_ip_assignment(interface, ap_ip).await?;
+
     // Start dnsmasq
     tracing::info!("Starting dnsmasq");
     let mut dnsmasq = Command::new("dnsmasq")
         .arg("--keep-in-foreground")
         .arg("--no-daemon")
         .arg(&format!("--conf-file={}", DNSMASQ_CONF_PATH))
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
         .spawn()
         .context("Failed to start dnsmasq")?;
 
@@ -164,6 +169,34 @@ address=/#/{}
     }
 
     tracing::info!("Access point started successfully");
+    Ok(())
+}
+
+async fn restore_device_after_ap(interface: &str) -> Result<()> {
+    // Ensure iwd is available again for NetworkManager's WiFi backend.
+    let _ = Command::new("systemctl")
+        .args(["start", "iwd.service"])
+        .output()
+        .await;
+
+    // Best-effort: re-enable NetworkManager management of this device.
+    if let Ok(connection) = Connection::system().await {
+        if let Ok(nm_proxy) = zbus::Proxy::new(&connection, NM_DEST, NM_PATH, NM_IFACE).await {
+            if let Ok(device_path) = nm_proxy
+                .call::<_, _, zvariant::OwnedObjectPath>("GetDeviceByIpIface", &(interface,))
+                .await
+            {
+                if let Ok(device_proxy) =
+                    zbus::Proxy::new(&connection, NM_DEST, device_path.as_str(), NM_DEVICE_IFACE)
+                        .await
+                {
+                    let _ = device_proxy.set_property("Managed", &true).await;
+                    let _ = device_proxy.set_property("Autoconnect", &true).await;
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -235,25 +268,79 @@ async fn wait_for_ip_assignment(interface: &str, expected_ip: &str) -> Result<()
     );
 }
 
-async fn prepare_device_for_ap(interface: &str) {
-    let Ok(connection) = Connection::system().await else {
-        return;
-    };
-    let Ok(nm_proxy) = zbus::Proxy::new(&connection, NM_DEST, NM_PATH, NM_IFACE).await else {
-        return;
-    };
-    let Ok(device_path) = nm_proxy
-        .call::<_, _, zvariant::OwnedObjectPath>("GetDeviceByIpIface", &(interface,))
-        .await
-    else {
-        return;
-    };
-    let Ok(device_proxy) =
-        zbus::Proxy::new(&connection, NM_DEST, device_path.as_str(), NM_DEVICE_IFACE).await
-    else {
-        return;
-    };
+async fn prepare_device_for_ap(interface: &str) -> Result<()> {
+    // hostapd expects exclusive control of the nl80211 interface. In our images,
+    // NetworkManager uses iwd as the WiFi backend, so both need to release the device.
 
-    let _ = device_proxy.set_property("Autoconnect", &false).await;
-    let _ = device_proxy.call::<_, _, ()>("Disconnect", &()).await;
+    // Best-effort: tell NetworkManager to disconnect and stop managing this device.
+    if let Ok(connection) = Connection::system().await {
+        if let Ok(nm_proxy) = zbus::Proxy::new(&connection, NM_DEST, NM_PATH, NM_IFACE).await {
+            if let Ok(device_path) = nm_proxy
+                .call::<_, _, zvariant::OwnedObjectPath>("GetDeviceByIpIface", &(interface,))
+                .await
+            {
+                if let Ok(device_proxy) =
+                    zbus::Proxy::new(&connection, NM_DEST, device_path.as_str(), NM_DEVICE_IFACE)
+                        .await
+                {
+                    let _ = device_proxy.set_property("Autoconnect", &false).await;
+                    let _ = device_proxy.call::<_, _, ()>("Disconnect", &()).await;
+                    let _ = device_proxy.set_property("Managed", &false).await;
+                }
+            }
+        }
+    }
+
+    // Stop iwd and wait until it is actually inactive.
+    tracing::debug!("Stopping iwd to release interface for hostapd");
+    let _ = Command::new("systemctl")
+        .args(["stop", "iwd.service"])
+        .output()
+        .await;
+
+    wait_for_systemd_inactive("iwd.service", std::time::Duration::from_secs(6)).await?;
+    wait_for_station_disconnect(interface, std::time::Duration::from_secs(6)).await?;
+    Ok(())
+}
+
+async fn wait_for_systemd_inactive(unit: &str, timeout: std::time::Duration) -> Result<()> {
+    let deadline = std::time::Instant::now() + timeout;
+    while std::time::Instant::now() < deadline {
+        let status = Command::new("systemctl")
+            .args(["is-active", "--quiet", unit])
+            .status()
+            .await
+            .with_context(|| format!("Failed to query systemd unit status for {}", unit))?;
+
+        if !status.success() {
+            return Ok(());
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+    }
+
+    bail!("Timed out waiting for systemd unit {} to stop", unit);
+}
+
+async fn wait_for_station_disconnect(interface: &str, timeout: std::time::Duration) -> Result<()> {
+    let deadline = std::time::Instant::now() + timeout;
+    while std::time::Instant::now() < deadline {
+        let output = Command::new("iw")
+            .args(["dev", interface, "link"])
+            .output()
+            .await
+            .context("Failed to query WiFi link status")?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if stdout.contains("Not connected") {
+            return Ok(());
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+    }
+
+    bail!(
+        "Timed out waiting for {} to disconnect from its current WiFi network",
+        interface
+    );
 }
