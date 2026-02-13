@@ -3,7 +3,7 @@
 mod ui;
 mod widgets;
 
-use crate::controller::{ipc, ConnectionStatus, WifiStateSnapshot};
+use crate::controller::{ipc, ConnectionStatus, WifiBackend, WifiStateSnapshot};
 use anyhow::Result;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
@@ -78,6 +78,29 @@ impl App {
                 Err(e) => {
                     self.error_message = Some(format!("Connection failed: {}", e));
                 }
+            }
+        }
+    }
+
+    async fn switch_backend(&mut self) {
+        // Toggle between iwd and wpa_supplicant
+        let current_backend = self
+            .state
+            .as_ref()
+            .and_then(|s| s.wifi_backend)
+            .unwrap_or(WifiBackend::Iwd);
+
+        let new_backend = match current_backend {
+            WifiBackend::Iwd => WifiBackend::WpaSupplicant,
+            WifiBackend::WpaSupplicant => WifiBackend::Iwd,
+        };
+
+        match ipc::send_switch_backend(&self.socket_path, new_backend).await {
+            Ok(()) => {
+                // State will update via refresh_state() tick
+            }
+            Err(e) => {
+                self.error_message = Some(format!("Backend switch failed: {}", e));
             }
         }
     }
@@ -168,6 +191,9 @@ async fn run_app(
                             }
                             KeyCode::Char('r') => {
                                 app.refresh_state().await;
+                            }
+                            KeyCode::Char('b') => {
+                                app.switch_backend().await;
                             }
                             _ => {}
                         },

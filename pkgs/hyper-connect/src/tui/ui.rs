@@ -58,10 +58,24 @@ fn draw_header(f: &mut Frame, area: Rect, app: &App) {
     let status_text = match app.state.as_ref().map(|s| &s.status) {
         Some(ConnectionStatus::Connected) => ("CONNECTED", SUCCESS),
         Some(ConnectionStatus::Connecting) => ("CONNECTING...", WARNING),
+        Some(ConnectionStatus::SwitchingBackend) => ("SWITCHING BACKEND...", WARNING),
         Some(ConnectionStatus::Scanning) => ("SCANNING...", ACCENT),
         Some(ConnectionStatus::Failed) => ("FAILED", ERROR),
         Some(ConnectionStatus::AwaitingCredentials) => ("AWAITING CREDENTIALS", PRIMARY),
         _ => ("INITIALIZING", Color::Gray),
+    };
+
+    let backend_text = if let Some(state) = &app.state {
+        if let Some(backend) = state.wifi_backend {
+            format!(" | {}", match backend {
+                crate::controller::WifiBackend::Iwd => "IWD",
+                crate::controller::WifiBackend::WpaSupplicant => "WPA_SUPPLICANT",
+            })
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
     };
 
     let header = Paragraph::new(Line::from(vec![
@@ -71,7 +85,8 @@ fn draw_header(f: &mut Frame, area: Rect, app: &App) {
         ),
         Span::raw("  ::  "),
         Span::styled("WIFI SETUP", Style::default().fg(PRIMARY)),
-        Span::raw("                              "),
+        Span::styled(&backend_text, Style::default().fg(Color::DarkGray)),
+        Span::raw("                        "),
         Span::styled(
             format!("[ {} ]", status_text.0),
             Style::default().fg(status_text.1),
@@ -255,7 +270,7 @@ fn draw_details_panel(f: &mut Frame, area: Rect, app: &App) {
 fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
     let help_text = match app.input_mode {
         InputMode::Normal => {
-            "[↑/↓] Select   [Enter] Connect   [M] Manual SSID   [R] Refresh   [Q] Quit"
+            "[↑/↓] Select   [Enter] Connect   [B] Switch Backend   [R] Refresh   [Q] Quit"
         }
         InputMode::Password => "[Enter] Submit   [Tab] Show/Hide   [Esc] Cancel",
         InputMode::ManualSsid => "[Enter] Submit   [Esc] Cancel",

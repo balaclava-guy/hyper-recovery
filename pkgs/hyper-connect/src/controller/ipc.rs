@@ -19,6 +19,9 @@ pub enum IpcRequest {
         #[serde(default = "default_save")]
         save: bool,
     },
+    SwitchBackend {
+        backend: super::WifiBackend,
+    },
     Shutdown,
 }
 
@@ -99,6 +102,13 @@ async fn handle_client(stream: UnixStream, state: Arc<AppState>) -> Result<()> {
                     .await;
                 IpcResponse::Ok
             }
+            IpcRequest::SwitchBackend { backend } => {
+                let _ = state
+                    .command_tx
+                    .send(ControlCommand::SwitchBackend { backend })
+                    .await;
+                IpcResponse::Ok
+            }
             IpcRequest::Shutdown => {
                 let _ = state.command_tx.send(ControlCommand::Shutdown).await;
                 IpcResponse::Ok
@@ -144,6 +154,27 @@ pub async fn send_connect(socket_path: &str, ssid: &str, password: &str, save: b
         password: password.to_string(),
         save,
     };
+    let json = serde_json::to_string(&request)? + "\n";
+    writer.write_all(json.as_bytes()).await?;
+
+    let mut line = String::new();
+    reader.read_line(&mut line).await?;
+
+    let response: IpcResponse = serde_json::from_str(&line)?;
+    match response {
+        IpcResponse::Ok => Ok(()),
+        IpcResponse::Error(e) => anyhow::bail!("Daemon error: {}", e),
+        _ => anyhow::bail!("Unexpected response"),
+    }
+}
+
+/// Send backend switch command to daemon (client side)
+pub async fn send_switch_backend(socket_path: &str, backend: super::WifiBackend) -> Result<()> {
+    let stream = UnixStream::connect(socket_path).await?;
+    let (reader, mut writer) = stream.into_split();
+    let mut reader = BufReader::new(reader);
+
+    let request = IpcRequest::SwitchBackend { backend };
     let json = serde_json::to_string(&request)? + "\n";
     writer.write_all(json.as_bytes()).await?;
 
