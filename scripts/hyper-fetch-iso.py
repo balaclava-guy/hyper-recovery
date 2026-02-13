@@ -23,6 +23,8 @@ DEFAULT_REPO = "balaclava-guy/hyper-recovery"
 DEFAULT_WORKFLOW = "build.yml"
 DEFAULT_ARTIFACT = "live-iso"
 DEFAULT_DEST = "/Volumes/Ventoy"
+DEFAULT_REMOTE_HOST = "10.10.100.119"
+DEFAULT_REMOTE_VENTOY_PATH = "/mnt/ventoy"
 
 
 def run_json(cmd: list[str]) -> Any:
@@ -46,7 +48,13 @@ def ensure_tools() -> None:
         if shutil.which(tool) is None:
             raise RuntimeError(f"Required tool '{tool}' not found in PATH")
     if shutil.which("7zz") is None and shutil.which("7z") is None:
-        raise RuntimeError("Required extractor not found: expected '7zz' or '7z' in PATH")
+        raise RuntimeError(
+            "Required extractor not found: expected '7zz' or '7z' in PATH"
+        )
+    if shutil.which("rsync") is None and shutil.which("scp") is None:
+        raise RuntimeError(
+            "Required transfer tool not found: expected 'rsync' or 'scp' in PATH"
+        )
 
 
 def get_last_commit_sha() -> str:
@@ -207,6 +215,53 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def check_remote_mount(remote_host: str, remote_ventoy_path: str) -> None:
+    try:
+        subprocess.run(
+            ["ssh", remote_host, f"test -d {remote_ventoy_path}"],
+            check=True,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            f"Remote Ventoy path does not exist or is not accessible: {remote_host}:{remote_ventoy_path}"
+        ) from exc
+
+
+def verify_remote_hash(remote_host: str, remote_path: str, expected_hash: str) -> None:
+    result = subprocess.run(
+        ["ssh", remote_host, f"sha256sum {remote_path}"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    remote_hash = result.stdout.split()[0]
+    if remote_hash != expected_hash:
+        raise RuntimeError(
+            f"SHA256 mismatch: expected={expected_hash} remote={remote_hash}"
+        )
+
+
+def scp_file(local_path: Path, remote_host: str, remote_path: str) -> str:
+    iso_size = local_path.stat().st_size
+    iso_size_mb = iso_size / (1024 * 1024)
+    print(f"Transferring {iso_size_mb:.1f} MB to {remote_host}:{remote_path}")
+    try:
+        subprocess.run(
+            [
+                "rsync",
+                "--partial",
+                "--progress",
+                str(local_path),
+                f"{remote_host}:{remote_path}",
+            ],
+            check=True,
+        )
+        return remote_path
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(f"Failed to transfer file to {remote_host}: {exc}") from exc
+
+
 def pick_single_file(root: Path, pattern: str) -> Path:
     matches = sorted(root.rglob(pattern))
     if not matches:
@@ -219,15 +274,21 @@ def pick_single_file(root: Path, pattern: str) -> Path:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", default=DEFAULT_REPO, help="GitHub repo in owner/name form")
-    parser.add_argument("--workflow", default=DEFAULT_WORKFLOW, help="Workflow file name")
+    parser.add_argument(
+        "--repo", default=DEFAULT_REPO, help="GitHub repo in owner/name form"
+    )
+    parser.add_argument(
+        "--workflow", default=DEFAULT_WORKFLOW, help="Workflow file name"
+    )
     parser.add_argument(
         "--artifact-name",
         default=DEFAULT_ARTIFACT,
         help="GitHub Actions artifact name",
     )
     parser.add_argument("--run-id", type=int, help="Use this specific run id")
-    parser.add_argument("--sha", help="Find latest successful run for this commit SHA/prefix")
+    parser.add_argument(
+        "--sha", help="Find latest successful run for this commit SHA/prefix"
+    )
     parser.add_argument(
         "--last-commit",
         action="store_true",
@@ -259,7 +320,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dest",
         default=DEFAULT_DEST,
-        help="Destination directory for final ISO copy",
+        help="Destination directory for final ISO copy (local mode)",
+    )
+    parser.add_argument(
+        "--remote-host",
+        help=f"Remote host for SCP transfer (e.g., {DEFAULT_REMOTE_HOST})",
+    )
+    parser.add_argument(
+        "--remote-ventoy-path",
+        help=f"Remote Ventoy mount path (e.g., {DEFAULT_REMOTE_VENTOY_PATH})",
     )
     parser.add_argument(
         "--workdir",
@@ -320,7 +389,11 @@ def main() -> int:
             f"Using artifact '{args.artifact_name}' id={artifact_id} size={artifact.get('size_in_bytes')} bytes"
         )
 
-        workdir = Path(args.workdir) if args.workdir else Path(f"/tmp/hyper-iso-{selected_run_id}")
+        workdir = (
+            Path(args.workdir)
+            if args.workdir
+            else Path(f"/tmp/hyper-iso-{selected_run_id}")
+        )
         download_dir = workdir / "download"
         zip_extract_dir = workdir / "zip-extract"
         seven_extract_dir = workdir / "extract"
@@ -345,24 +418,43 @@ def main() -> int:
         extract_7z(archive_7z, seven_extract_dir)
 
         iso_path = pick_single_file(seven_extract_dir, "*.iso")
-        dest_dir = Path(args.dest)
-        if not dest_dir.exists() or not dest_dir.is_dir():
-            raise RuntimeError(f"Destination directory does not exist: {dest_dir}")
-        dest_iso = dest_dir / iso_path.name
 
-        print(f"Copying {iso_path} -> {dest_iso}")
-        shutil.copy2(iso_path, dest_iso)
+        remote_mode = args.remote_host is not None
+        if remote_mode:
+            remote_host = args.remote_host
+            remote_ventoy_path = args.remote_ventoy_path or DEFAULT_REMOTE_VENTOY_PATH
+            remote_dest = f"{remote_ventoy_path}/{iso_path.name}"
 
-        if not args.no_verify:
-            src_hash = sha256(iso_path)
-            dst_hash = sha256(dest_iso)
-            if src_hash != dst_hash:
-                raise RuntimeError(
-                    f"SHA256 mismatch after copy: src={src_hash} dst={dst_hash}"
-                )
-            print(f"SHA256 verified: {src_hash}")
+            print(f"Remote mode: transferring to {remote_host}:{remote_dest}")
+            check_remote_mount(remote_host, remote_ventoy_path)
 
-        print(f"Done. ISO ready at: {dest_iso}")
+            scp_file(iso_path, remote_host, remote_dest)
+
+            if not args.no_verify:
+                src_hash = sha256(iso_path)
+                verify_remote_hash(remote_host, remote_dest, src_hash)
+                print(f"SHA256 verified: {src_hash}")
+
+            print(f"Done. ISO ready at: {remote_host}:{remote_dest}")
+        else:
+            dest_dir = Path(args.dest)
+            if not dest_dir.exists() or not dest_dir.is_dir():
+                raise RuntimeError(f"Destination directory does not exist: {dest_dir}")
+            dest_iso = dest_dir / iso_path.name
+
+            print(f"Copying {iso_path} -> {dest_iso}")
+            shutil.copy2(iso_path, dest_iso)
+
+            if not args.no_verify:
+                src_hash = sha256(iso_path)
+                dst_hash = sha256(dest_iso)
+                if src_hash != dst_hash:
+                    raise RuntimeError(
+                        f"SHA256 mismatch after copy: src={src_hash} dst={dst_hash}"
+                    )
+                print(f"SHA256 verified: {src_hash}")
+
+            print(f"Done. ISO ready at: {dest_iso}")
 
         if not args.keep_workdir:
             shutil.rmtree(workdir, ignore_errors=True)
@@ -372,7 +464,10 @@ def main() -> int:
 
         return 0
     except subprocess.CalledProcessError as exc:
-        print(f"Command failed (exit {exc.returncode}): {' '.join(exc.cmd)}", file=sys.stderr)
+        print(
+            f"Command failed (exit {exc.returncode}): {' '.join(exc.cmd)}",
+            file=sys.stderr,
+        )
         return 1
     except Exception as exc:  # noqa: BLE001
         print(f"Error: {exc}", file=sys.stderr)

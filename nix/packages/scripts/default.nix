@@ -107,6 +107,8 @@ in
       git
       gh
       p7zip
+      rsync
+      openssh
     ];
   };
 }

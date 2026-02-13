@@ -192,6 +192,34 @@ The ISO image is a **hybrid boot image** designed for USB:
     -   Boot local drives as VMs through Cockpit/libvirt
     -   Use the machine's BIOS/UEFI boot menu to chainload
 
+## Developer Tools
+
+### hyper-fetch-iso
+
+Automated ISO deployment tool that fetches the latest ISO from GitHub Actions and copies it to a Ventoy mount point.
+
+**Local mode** (copy to local Ventoy USB):
+
+```bash
+nix run .#hyper-fetch-iso -- --last-commit
+```
+
+**Remote mode** (transfer via SSH to remote box):
+
+```bash
+nix run .#hyper-fetch-iso -- --last-commit --remote-host 10.10.100.119
+```
+
+With custom remote Ventoy path:
+
+```bash
+nix run .#hyper-fetch-iso -- --last-commit \
+  --remote-host 10.10.100.119 \
+  --remote-ventoy-path /mnt/ventoy
+```
+
+See `docs/REMOTE_ISO_DEPLOYMENT.md` for detailed setup instructions.
+
 ## Troubleshooting
 
 ### Plymouth Boot Splash Not Showing

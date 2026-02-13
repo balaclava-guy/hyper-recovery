@@ -5,7 +5,11 @@
 {
   imports = [ inputs.devshell.flakeModule ];
   
-  perSystem = { config, pkgs, system, lib, ... }: {
+  perSystem = { config, pkgs, system, lib, ... }:
+    let
+      scripts = pkgs.callPackage ../packages/scripts {};
+    in
+  {
     devshells.default = {
       name = "hyper-recovery-dev";
       
@@ -17,6 +21,7 @@
         rustc
         pkg-config
         openssl
+        scripts."hyper-fetch-iso"
       ] ++ lib.optionals (system == "aarch64-darwin") [
         clang
         libiconv
@@ -73,6 +78,12 @@
           name = "run-theme-vm";
           command = "nix run .#theme-vm";
           help = "Run theme preview VM";
+          category = "dev";
+        }
+        {
+          name = "fetch-latest-iso";
+          command = "hyper-fetch-iso --last-commit --watch";
+          help = "Fetch latest ISO artifact for HEAD and copy to /Volumes/Ventoy";
           category = "dev";
         }
         {
