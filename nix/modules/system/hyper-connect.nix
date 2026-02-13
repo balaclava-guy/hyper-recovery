@@ -79,7 +79,7 @@ in
         ProtectSystem = "strict";
         ProtectHome = true;
         PrivateTmp = true;
-        ReadWritePaths = [ "/run" "/tmp" "/sys/class/net" ];
+        ReadWritePaths = [ "/run" "/tmp" "/sys/class/net" "/var/lib/hyper-connect" ];
       };
 
       path = [

@@ -172,7 +172,7 @@ address=/#/{}
     Ok(())
 }
 
-async fn restore_device_after_ap(interface: &str) -> Result<()> {
+pub async fn restore_device_after_ap(interface: &str) -> Result<()> {
     // Ensure iwd is available again for NetworkManager's WiFi backend.
     let _ = Command::new("systemctl")
         .args(["start", "iwd.service"])

@@ -126,11 +126,12 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
                 "Found saved credentials for available network, attempting auto-connect"
             );
 
-            // Try to connect with saved credentials
+            // Try to connect with saved credentials (auto-connect always saves)
             match network_manager::connect_to_network(
                 &app_state.config.interface,
                 &known_network.ssid,
                 password,
+                true,
             )
             .await
             {
@@ -228,6 +229,7 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
                                 &ctrl_state.config.interface,
                                 &ssid,
                                 &password,
+                                save,
                             ).await {
                                 Ok(()) => {
                                     tracing::info!("Successfully connected to WiFi");
@@ -352,6 +354,11 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
     // Cleanup
     tracing::info!("Cleaning up...");
     let _ = ap_manager::stop_ap().await;
+
+    // Restore NetworkManager management of the WiFi interface so it can maintain
+    // the station connection after the daemon exits.
+    let _ = ap_manager::restore_device_after_ap(&app_state.config.interface).await;
+
     ipc_handle.abort();
     web_handle.abort();
 

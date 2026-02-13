@@ -457,8 +457,8 @@ pub async fn scan_networks(interface: &str) -> Result<Vec<NetworkInfo>> {
 }
 
 /// Connect to a WiFi network
-pub async fn connect_to_network(interface: &str, ssid: &str, password: &str) -> Result<()> {
-    tracing::info!(interface = %interface, ssid = %ssid, "Connecting to WiFi network");
+pub async fn connect_to_network(interface: &str, ssid: &str, password: &str, save: bool) -> Result<()> {
+    tracing::info!(interface = %interface, ssid = %ssid, save = save, "Connecting to WiFi network");
 
     // During AP mode we stop the WiFi backend and mark the device unmanaged to allow
     // hostapd to take exclusive control. Ensure the backend is restarted before asking
@@ -513,7 +513,7 @@ pub async fn connect_to_network(interface: &str, ssid: &str, password: &str) -> 
         let settings = build_connection_settings(ssid, password, specific_ap.as_str() == "/");
         let nm_proxy = zbus::Proxy::new(&connection, NM_DEST, NM_PATH, NM_IFACE).await?;
         let activate_result =
-            activate_connection(&nm_proxy, &settings, device_path.clone(), specific_ap).await;
+            activate_connection(&nm_proxy, &settings, device_path.clone(), specific_ap, save).await;
 
         match activate_result {
             Ok(()) => {
@@ -815,9 +815,12 @@ async fn activate_connection<'a>(
     settings: &HashMap<&'static str, HashMap<&'static str, Value<'a>>>,
     device_path: OwnedObjectPath,
     specific_ap: OwnedObjectPath,
+    save: bool,
 ) -> std::result::Result<(), String> {
     let mut options: HashMap<&str, Value> = HashMap::new();
-    options.insert("persist", Value::from("volatile"));
+    // Use NetworkManager's built-in credential storage when save=true
+    let persist_mode = if save { "disk" } else { "volatile" };
+    options.insert("persist", Value::from(persist_mode));
 
     let v2_result: std::result::Result<
         (
