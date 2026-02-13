@@ -56,6 +56,13 @@
     ];
   };
 
+  # Install libvirt-dbus D-Bus policy so cockpit-machines can communicate with libvirt.
+  # NixOS doesn't automatically install D-Bus policies for enabled services.
+  # We can't use services.dbus.packages = [ pkgs.libvirt-dbus ] because it causes
+  # Python version conflicts in buildEnv. Instead, manually symlink the policy file.
+  environment.etc."dbus-1/system.d/org.libvirt.conf".source =
+    "${pkgs.libvirt-dbus}/share/dbus-1/system.d/org.libvirt.conf";
+
   # Management Interface (Cockpit)
   services.cockpit = {
     enable = true;
