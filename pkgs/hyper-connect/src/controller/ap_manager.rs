@@ -53,6 +53,10 @@ pub async fn start_ap(interface: &str, ssid: &str, ap_ip: &str) -> Result<()> {
         .await
         .context("Failed to bring interface up")?;
 
+    // Wait for the IP address to be fully assigned before proceeding.
+    // This prevents dnsmasq from failing with "Cannot assign requested address".
+    wait_for_ip_assignment(interface, ap_ip).await?;
+
     // Create hostapd config
     let hostapd_conf = format!(
         r#"interface={}
@@ -203,6 +207,32 @@ pub async fn stop_ap() -> Result<()> {
 
     tracing::info!("Access point stopped");
     Ok(())
+}
+
+/// Wait for an IP address to be fully assigned to an interface.
+async fn wait_for_ip_assignment(interface: &str, expected_ip: &str) -> Result<()> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+
+    while std::time::Instant::now() < deadline {
+        let output = Command::new("ip")
+            .args(["-4", "-o", "addr", "show", "dev", interface])
+            .output()
+            .await
+            .context("Failed to check IP assignment")?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if stdout.contains(expected_ip) {
+            return Ok(());
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    bail!(
+        "Timed out waiting for IP {} to be assigned to {}",
+        expected_ip,
+        interface
+    );
 }
 
 async fn prepare_device_for_ap(interface: &str) {

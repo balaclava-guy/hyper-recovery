@@ -58,8 +58,14 @@ in
     isNormalUser = true;
     password = "nixos";
     # Allow Cockpit/libvirt access without root
-    extraGroups = [ "wheel" "libvirtd" "kvm" ];
+    # Note: "libvirt" group is required for libvirt-dbus D-Bus policy
+    extraGroups = [ "wheel" "libvirtd" "libvirt" "kvm" ];
   };
+
+  # Create "libvirt" group for libvirt-dbus D-Bus policy compatibility.
+  # The upstream libvirt-dbus D-Bus policy expects "libvirt" group, but NixOS
+  # uses "libvirtd". We need both for full compatibility.
+  users.groups.libvirt = {};
 
   # SSH
   services.openssh = {

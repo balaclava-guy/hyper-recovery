@@ -118,8 +118,10 @@ in
         TTYVTDisallocate = true;
       };
 
+      # Use --no-block to avoid blocking on getty startup (which can hang
+      # waiting for the TTY to be released by the exiting TUI).
       postStop = ''
-        ${pkgs.systemd}/bin/systemctl start getty@tty1.service || true
+        ${pkgs.systemd}/bin/systemctl --no-block start getty@tty1.service || true
       '';
     };
 

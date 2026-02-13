@@ -58,6 +58,16 @@ in
   # Ensure virtio_gpu is available for early KMS
   boot.initrd.availableKernelModules = [ "virtio_gpu" "virtio_pci" "9p" "9pnet_virtio" "dm_thin_pool" "dm_persistent_data" "dm_bio_prison" "dm_bufio" ];
 
+  # Ensure dm_thin_pool is loaded early in stage 2 boot, before udev triggers
+  # LVM activation. This prevents the "thin-pool target support missing" error
+  # when activating Proxmox thin-provisioned volumes.
+  boot.kernelModules = [
+    "dm_thin_pool"
+    "dm_persistent_data"
+    "dm_bio_prison"
+    "dm_bufio"
+  ];
+
   # Firmware & wireless
   # Include all wireless firmware families without pulling the full firmware set.
   hardware.enableAllFirmware = false;
