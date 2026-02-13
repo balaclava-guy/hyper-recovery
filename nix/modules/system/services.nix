@@ -8,12 +8,46 @@
   virtualisation.libvirtd = {
     enable = true;
     dbus.enable = true;
+    # Cockpit expects a consistently available libvirt backend.
+    # - Keep libvirtd running (avoid idle socket-activation timeout)
+    # - Avoid polkit prompts for system services (libvirt-dbus) by relying on
+    #   unix socket permissions instead.
+    extraOptions = [ "--timeout" "0" ];
+    extraConfig = ''
+      auth_unix_ro = "none"
+      auth_unix_rw = "none"
+      unix_sock_group = "libvirtd"
+      unix_sock_ro_perms = "0770"
+      unix_sock_rw_perms = "0770"
+    '';
     qemu = {
       package = pkgs.qemu_kvm;
       runAsRoot = true;
       swtpm.enable = true;
     };
   };
+
+  # When using socket activation, systemd creates the libvirt sockets.
+  # Ensure they are restricted to the libvirtd group to match extraConfig.
+  systemd.sockets.libvirtd.socketConfig = {
+    SocketMode = "0660";
+    SocketGroup = "libvirtd";
+  };
+  systemd.sockets."libvirtd-ro".socketConfig = {
+    SocketMode = "0660";
+    SocketGroup = "libvirtd";
+  };
+  systemd.sockets."libvirtd-admin".socketConfig = {
+    SocketMode = "0660";
+    SocketGroup = "libvirtd";
+  };
+
+  # libvirt-dbus is a system service (no interactive polkit agent). Give it
+  # direct socket access for its backend connection.
+  systemd.services.libvirt-dbus.serviceConfig.SupplementaryGroups = [
+    "qemu-libvirtd"
+    "libvirtd"
+  ];
 
   # Management Interface (Cockpit)
   services.cockpit = {

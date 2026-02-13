@@ -8,12 +8,30 @@ use std::time::Instant;
 pub enum ConnectionStatus {
     #[default]
     Initializing,
+    SwitchingBackend,
     Scanning,
     AwaitingCredentials,
     Connecting,
     Connected,
     Failed,
     Disconnected,
+}
+
+/// WiFi backend used by NetworkManager.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WifiBackend {
+    Iwd,
+    WpaSupplicant,
+}
+
+impl WifiBackend {
+    pub fn as_nm_value(self) -> &'static str {
+        match self {
+            WifiBackend::Iwd => "iwd",
+            WifiBackend::WpaSupplicant => "wpa_supplicant",
+        }
+    }
 }
 
 /// Information about a discovered WiFi network
@@ -39,6 +57,7 @@ pub struct WifiState {
     pub ap_ssid: Option<String>,
     pub portal_url: Option<String>,
     pub last_error: Option<String>,
+    pub wifi_backend: Option<WifiBackend>,
     pub last_scan: Option<Instant>,
 }
 
@@ -53,6 +72,7 @@ pub struct WifiStateSnapshot {
     pub ap_ssid: Option<String>,
     pub portal_url: Option<String>,
     pub last_error: Option<String>,
+    pub wifi_backend: Option<WifiBackend>,
     pub last_scan_secs_ago: Option<u64>,
 }
 
@@ -67,6 +87,7 @@ impl From<&WifiState> for WifiStateSnapshot {
             ap_ssid: state.ap_ssid.clone(),
             portal_url: state.portal_url.clone(),
             last_error: state.last_error.clone(),
+            wifi_backend: state.wifi_backend,
             last_scan_secs_ago: state.last_scan.map(|t| t.elapsed().as_secs()),
         }
     }

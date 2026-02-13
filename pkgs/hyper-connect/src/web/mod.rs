@@ -27,6 +27,7 @@ pub async fn run_server(
         .route("/api/status", get(routes::api_status))
         .route("/api/connect", post(routes::api_connect))
         .route("/api/scan", post(routes::api_scan))
+        .route("/api/backend", post(routes::api_backend))
         // Captive portal detection endpoints
         .route("/generate_204", get(captive_check))
         .route("/hotspot-detect.html", get(captive_redirect))

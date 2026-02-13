@@ -29,6 +29,7 @@ const PORTAL_BEHAVIOR_JS: &str = r#"
   function statusToneForState(status) {
     if (status === 'Connected') return 'connected';
     if (status === 'Connecting') return 'connecting';
+    if (status === 'SwitchingBackend') return 'connecting';
     if (status === 'Failed') return 'failed';
     return 'waiting';
   }
@@ -37,6 +38,7 @@ const PORTAL_BEHAVIOR_JS: &str = r#"
     if (!data || !data.status) return 'Preparing WiFi setup';
     if (data.status === 'Connected') return 'Connected to ' + (data.connected_ssid || 'network');
     if (data.status === 'Connecting') return 'Connecting to ' + (data.connecting_to || 'network') + '...';
+    if (data.status === 'SwitchingBackend') return 'Switching WiFi backend...';
     if (data.status === 'Failed') return 'Connection failed';
     if (data.status === 'Scanning') return 'Scanning for nearby networks';
     if (data.status === 'AwaitingCredentials') return 'Select a network to connect';
@@ -48,6 +50,7 @@ const PORTAL_BEHAVIOR_JS: &str = r#"
     if (!data || !data.status) return 'Waiting for wireless interfaces to become ready.';
     if (data.status === 'Connected') return 'Connection is active. You can close this page now.';
     if (data.status === 'Connecting') return 'Authentication and DHCP are still in progress.';
+    if (data.status === 'SwitchingBackend') return 'Restarting WiFi services. The setup AP may restart; reconnect if needed.';
     if (data.status === 'Failed') return data.last_error || 'Unknown error while connecting.';
     if (data.status === 'Scanning') return 'Searching for available access points...';
     if (data.status === 'AwaitingCredentials') return 'Choose a network or enter credentials manually.';
@@ -186,6 +189,52 @@ const PORTAL_BEHAVIOR_JS: &str = r#"
     showModal('manual-modal');
   });
 
+  byId('settings-btn').addEventListener('click', function () {
+    showModal('settings-modal');
+    // Populate current backend from the last known status.
+    fetch('/api/status', { cache: 'no-store' })
+      .then(function (response) { return response.json(); })
+      .then(function (data) {
+        var backend = (data && data.wifi_backend) ? data.wifi_backend : null;
+        var backendLabel = backend === 'iwd' ? 'iwd' : (backend === 'wpa_supplicant' ? 'wpa_supplicant' : 'unknown');
+        byId('backend-current').textContent = backendLabel;
+      })
+      .catch(function () {
+        byId('backend-current').textContent = 'unknown';
+      });
+  });
+
+  byId('cancel-settings-btn').addEventListener('click', function () {
+    hideModal('settings-modal');
+  });
+
+  byId('backend-form').addEventListener('submit', async function (event) {
+    event.preventDefault();
+    var selected = document.querySelector('input[name="backend"]:checked');
+    if (!selected) {
+      return;
+    }
+
+    hideModal('settings-modal');
+    updateStatus('Switching WiFi backend...', 'connecting', 'Restarting WiFi services and NetworkManager...');
+    connectInProgress = true;
+
+    try {
+      var response = await fetch('/api/backend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ backend: selected.value })
+      });
+      var data = await response.json();
+      updateStatus(data.success ? 'Backend switch requested' : 'Backend switch failed', data.success ? 'connecting' : 'failed', data.message || '');
+      schedulePoll(1200);
+    } catch (err) {
+      connectInProgress = false;
+      clearPoll();
+      updateStatus('Backend switch error', 'failed', err.message || 'Unable to switch backend.');
+    }
+  });
+
   byId('scan-networks-btn').addEventListener('click', async function () {
     try {
       var response = await fetch('/api/scan', { method: 'POST' });
@@ -289,6 +338,15 @@ pub fn render_portal_page(snapshot: &WifiStateSnapshot) -> String {
                             >
                                 "Enter Network Manually"
                             </Button>
+
+                            <Button
+                                variant=ButtonVariant::Outline
+                                size=ButtonSize::Sm
+                                class="portal-action-btn"
+                                id="settings-btn"
+                            >
+                                "Help / Settings"
+                            </Button>
                         </div>
 
                         <section class="network-list" id="network-list">
@@ -387,6 +445,40 @@ pub fn render_portal_page(snapshot: &WifiStateSnapshot) -> String {
                         </CardContent>
                     </Card>
                 </div>
+
+                <div class="modal hidden" id="settings-modal">
+                    <Card class="modal-card">
+                        <CardHeader class="modal-header">
+                            <CardTitle class="modal-title">"Help / Settings"</CardTitle>
+                            <CardDescription class="modal-subtitle">
+                                "If WiFi connection is unreliable, try switching the NetworkManager WiFi backend. This restarts WiFi services and may temporarily drop your connection to the setup AP."
+                            </CardDescription>
+                        </CardHeader>
+
+                        <CardContent class="modal-content">
+                            <div class="settings-row">
+                                <span class="settings-label">"Current backend"</span>
+                                <span class="settings-value" id="backend-current">"unknown"</span>
+                            </div>
+
+                            <form class="portal-form" id="backend-form">
+                                <label class="radio-row">
+                                    <input name="backend" type="radio" value="iwd"/>
+                                    <span>"iwd (recommended for Intel WiFi)"</span>
+                                </label>
+                                <label class="radio-row">
+                                    <input name="backend" type="radio" value="wpa_supplicant"/>
+                                    <span>"wpa_supplicant (max compatibility)"</span>
+                                </label>
+
+                                <div class="modal-actions">
+                                    <button class="plain-btn secondary" id="cancel-settings-btn" type="button">"Close"</button>
+                                    <button class="plain-btn primary" type="submit">"Apply & Restart WiFi"</button>
+                                </div>
+                            </form>
+                        </CardContent>
+                    </Card>
+                </div>
             </div>
     }
     .to_html();
@@ -453,6 +545,7 @@ fn status_variant(status: &ConnectionStatus) -> AlertVariant {
     match status {
         ConnectionStatus::Connected => AlertVariant::Success,
         ConnectionStatus::Connecting => AlertVariant::Warning,
+        ConnectionStatus::SwitchingBackend => AlertVariant::Warning,
         ConnectionStatus::Failed => AlertVariant::Destructive,
         _ => AlertVariant::Default,
     }
@@ -462,6 +555,7 @@ fn status_tone(status: &ConnectionStatus) -> &'static str {
     match status {
         ConnectionStatus::Connected => "connected",
         ConnectionStatus::Connecting => "connecting",
+        ConnectionStatus::SwitchingBackend => "connecting",
         ConnectionStatus::Failed => "failed",
         _ => "waiting",
     }
@@ -477,6 +571,7 @@ fn status_text(state: &WifiStateSnapshot) -> String {
             "Connecting to {}...",
             state.connecting_to.as_deref().unwrap_or("network")
         ),
+        ConnectionStatus::SwitchingBackend => "Switching WiFi backend...".to_string(),
         ConnectionStatus::Failed => "Connection failed".to_string(),
         ConnectionStatus::Scanning => "Scanning for nearby networks".to_string(),
         ConnectionStatus::AwaitingCredentials => "Select a network to connect".to_string(),
@@ -489,6 +584,9 @@ fn status_detail(state: &WifiStateSnapshot) -> String {
     match state.status {
         ConnectionStatus::Connected => "Connection is active. You can continue setup.".to_string(),
         ConnectionStatus::Connecting => "Attempting authentication and DHCP handshake.".to_string(),
+        ConnectionStatus::SwitchingBackend => {
+            "Restarting WiFi services. The setup AP may restart; reconnect if needed.".to_string()
+        }
         ConnectionStatus::Failed => state
             .last_error
             .clone()

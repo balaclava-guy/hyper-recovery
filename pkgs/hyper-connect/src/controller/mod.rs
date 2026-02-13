@@ -6,7 +6,7 @@ pub mod ipc;
 mod network_manager;
 pub mod state;
 
-pub use state::{ConnectionStatus, NetworkInfo, WifiState, WifiStateSnapshot};
+pub use state::{ConnectionStatus, NetworkInfo, WifiBackend, WifiState, WifiStateSnapshot};
 
 use anyhow::Result;
 use std::sync::Arc;
@@ -40,6 +40,9 @@ pub enum ControlCommand {
         password: String,
         save: bool,
     },
+    SwitchBackend {
+        backend: WifiBackend,
+    },
     Shutdown,
 }
 
@@ -66,6 +69,13 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
         state_tx,
         command_tx: command_tx.clone(),
     });
+
+    // Record current NetworkManager WiFi backend (best effort).
+    if let Ok(backend) = network_manager::current_wifi_backend().await {
+        let mut state = app_state.wifi_state.write().await;
+        state.wifi_backend = Some(backend);
+        let _ = app_state.state_tx.send(state.clone());
+    }
 
     // Check for existing connectivity
     tracing::info!("Checking for existing network connectivity...");
@@ -261,6 +271,62 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<()> {
                                     state.status = ConnectionStatus::Failed;
                                     state.connecting_to = None;
                                     state.last_error = Some(e.to_string());
+                                    state.ap_running = true;
+                                    let _ = ctrl_state.state_tx.send(state.clone());
+                                }
+                            }
+                        }
+                        ControlCommand::SwitchBackend { backend } => {
+                            tracing::info!(backend = %backend.as_nm_value(), "WiFi backend switch requested");
+
+                            {
+                                let mut state = ctrl_state.wifi_state.write().await;
+                                state.status = ConnectionStatus::SwitchingBackend;
+                                state.last_error = None;
+                                let _ = ctrl_state.state_tx.send(state.clone());
+                            }
+
+                            // Expect portal connectivity to drop; attempt a clean AP restart after switching.
+                            let _ = ap_manager::stop_ap().await;
+
+                            match network_manager::switch_wifi_backend(backend).await {
+                                Ok(()) => {
+                                    tracing::info!(backend = %backend.as_nm_value(), "WiFi backend switch completed");
+
+                                    let mut state = ctrl_state.wifi_state.write().await;
+                                    state.wifi_backend = Some(backend);
+                                    state.status = ConnectionStatus::AwaitingCredentials;
+                                    state.last_error = Some(format!(
+                                        "Switched WiFi backend to {}. Reconnect to the setup AP if needed and try again.",
+                                        backend.as_nm_value()
+                                    ));
+                                    let _ = ctrl_state.state_tx.send(state.clone());
+
+                                    let _ = ap_manager::start_ap(
+                                        &ctrl_state.config.interface,
+                                        &ctrl_state.config.ssid,
+                                        &ctrl_state.config.ap_ip,
+                                    )
+                                    .await;
+
+                                    let mut state = ctrl_state.wifi_state.write().await;
+                                    state.ap_running = true;
+                                    state.ap_ssid = Some(ctrl_state.config.ssid.clone());
+                                    state.portal_url = Some(format!("http://{}", ctrl_state.config.ap_ip));
+                                    let _ = ctrl_state.state_tx.send(state.clone());
+                                }
+                                Err(e) => {
+                                    tracing::error!(error = %e, backend = %backend.as_nm_value(), "WiFi backend switch failed");
+                                    let _ = ap_manager::start_ap(
+                                        &ctrl_state.config.interface,
+                                        &ctrl_state.config.ssid,
+                                        &ctrl_state.config.ap_ip,
+                                    )
+                                    .await;
+
+                                    let mut state = ctrl_state.wifi_state.write().await;
+                                    state.status = ConnectionStatus::Failed;
+                                    state.last_error = Some(format!("Backend switch failed: {}", e));
                                     state.ap_running = true;
                                     let _ = ctrl_state.state_tx.send(state.clone());
                                 }

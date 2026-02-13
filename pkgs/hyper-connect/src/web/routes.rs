@@ -1,7 +1,7 @@
 //! Web routes and handlers
 
 use super::components;
-use crate::controller::{AppState, ControlCommand, WifiStateSnapshot};
+use crate::controller::{AppState, ControlCommand, WifiBackend, WifiStateSnapshot};
 use axum::{
     extract::State,
     response::{Html, IntoResponse},
@@ -42,6 +42,11 @@ pub struct ApiResponse {
     message: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct BackendRequest {
+    backend: WifiBackend,
+}
+
 /// API: Connect to network
 pub async fn api_connect(
     State(state): State<Arc<AppState>>,
@@ -80,6 +85,36 @@ pub async fn api_scan(State(state): State<Arc<AppState>>) -> impl IntoResponse {
         Err(e) => Json(ApiResponse {
             success: false,
             message: format!("Failed to send command: {}", e),
+        }),
+    }
+}
+
+/// API: Switch NetworkManager WiFi backend (iwd / wpa_supplicant)
+///
+/// NOTE: This is a troubleshooting escape hatch for the captive portal.
+/// If/when a general API Gateway exists for Hyper Recovery system control,
+/// this endpoint should likely move there (with auth, auditing, and a more
+/// general network/host control surface).
+pub async fn api_backend(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<BackendRequest>,
+) -> impl IntoResponse {
+    let result = state
+        .command_tx
+        .send(ControlCommand::SwitchBackend { backend: req.backend })
+        .await;
+
+    match result {
+        Ok(()) => Json(ApiResponse {
+            success: true,
+            message: format!(
+                "Switching WiFi backend to {}. The setup AP may restart; reconnect if needed.",
+                req.backend.as_nm_value()
+            ),
+        }),
+        Err(e) => Json(ApiResponse {
+            success: false,
+            message: format!("Failed to send backend switch command: {}", e),
         }),
     }
 }

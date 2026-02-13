@@ -365,6 +365,43 @@ textarea {
   margin-top: 2px;
 }
 
+.settings-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) - 4px);
+  padding: 10px 12px;
+  background: hsla(var(--muted), 0.35);
+  margin-bottom: 8px;
+}
+
+.settings-label {
+  font-size: 0.86rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.settings-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.86rem;
+  color: hsl(var(--foreground));
+}
+
+.radio-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) - 4px);
+  padding: 10px 12px;
+  background: hsla(var(--muted), 0.18);
+}
+
+.radio-row input {
+  width: 16px;
+  height: 16px;
+}
+
 .plain-btn {
   flex: 1;
   min-height: 40px;

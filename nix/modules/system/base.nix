@@ -24,6 +24,9 @@ in
 
   # Networking
   networking.networkmanager.enable = true;
+  # Allow switching WiFi stack; default to iwd for Intel stability.
+  networking.wireless.iwd.enable = true;
+  networking.networkmanager.wifi.backend = "iwd";
   networking.dhcpcd.enable = false;
 
   # MOTD shell script (sourced on login)
@@ -33,9 +36,11 @@ in
   environment.systemPackages = with pkgs; [
     qemu-utils zfs parted gptfdisk htop vim git perl
     pciutils usbutils smartmontools nvme-cli os-prober efibootmgr
-    wpa_supplicant dhcpcd udisks2
+    # WiFi tooling (NM backend can be iwd or wpa_supplicant).
+    iwd wpa_supplicant dhcpcd udisks2
     networkmanager  # nmcli
     iw
+    virt-manager # provides virt-install/virt-clone for VM creation
     plymouth  # For Plymouth debugging
     scripts.hyper-debug  # User-triggered diagnostics
     scripts.hyper-hw     # Firmware management

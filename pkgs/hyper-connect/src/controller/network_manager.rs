@@ -1,6 +1,6 @@
 //! NetworkManager D-Bus integration
 
-use super::NetworkInfo;
+use super::{NetworkInfo, WifiBackend};
 use anyhow::{Context, Result};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -28,6 +28,100 @@ const NM_DEVICE_TYPE_WIFI: u32 = 2;
 const NM_DEVICE_STATE_ACTIVATED: u32 = 100;
 const NM_DEVICE_STATE_FAILED: u32 = 120;
 const NM_80211_AP_FLAGS_PRIVACY: u32 = 0x1;
+
+/// Parse the active NetworkManager WiFi backend from `NetworkManager --print-config`.
+pub async fn current_wifi_backend() -> Result<WifiBackend> {
+    let output = tokio::task::spawn_blocking(|| Command::new("NetworkManager").arg("--print-config").output())
+        .await
+        .context("Failed to join NetworkManager config probe")??;
+
+    if !output.status.success() {
+        anyhow::bail!("NetworkManager --print-config failed");
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let line = line.trim();
+        if let Some(value) = line.strip_prefix("wifi.backend=") {
+            let value = value.trim();
+            return match value {
+                "iwd" => Ok(WifiBackend::Iwd),
+                "wpa_supplicant" => Ok(WifiBackend::WpaSupplicant),
+                other => anyhow::bail!("Unknown NetworkManager wifi.backend value: {}", other),
+            };
+        }
+    }
+
+    anyhow::bail!("NetworkManager wifi.backend not found in printed config")
+}
+
+/// Switch NetworkManager WiFi backend (best-effort) by writing an override file and restarting services.
+///
+/// Notes:
+/// - This restarts NetworkManager and may interrupt connectivity.
+/// - Intended for troubleshooting in a recovery environment.
+pub async fn switch_wifi_backend(backend: WifiBackend) -> Result<()> {
+    let backend_value = backend.as_nm_value();
+    let script = format!(
+        r#"set -e
+export PATH=/run/current-system/sw/bin:$PATH
+CONF_DIR=/etc/NetworkManager/conf.d
+CONF_FILE=$CONF_DIR/99-hyper-connect-backend.conf
+
+mkdir -p "$CONF_DIR"
+cat > "$CONF_FILE" <<'EOF'
+[device]
+wifi.backend={backend_value}
+EOF
+
+if [ "{backend_value}" = "iwd" ]; then
+  if ! systemctl cat iwd.service >/dev/null 2>&1; then
+    echo "iwd.service is not available on this image" >&2
+    exit 2
+  fi
+  systemctl stop wpa_supplicant.service || true
+  systemctl start iwd.service
+else
+  if ! systemctl cat wpa_supplicant.service >/dev/null 2>&1; then
+    echo "wpa_supplicant.service is not available on this image" >&2
+    exit 2
+  fi
+  systemctl stop iwd.service || true
+  systemctl start wpa_supplicant.service
+fi
+
+systemctl restart NetworkManager.service
+"#
+    );
+
+    // hyper-connect runs with a hardened unit; run the switch outside of its sandbox.
+    let output = tokio::process::Command::new("/run/current-system/sw/bin/systemd-run")
+        .args([
+            "--quiet",
+            "--wait",
+            "--collect",
+            "--unit",
+            "hyper-connect-backend-switch",
+            "--property",
+            "Type=oneshot",
+            "--property",
+            "TimeoutStartSec=45s",
+            "--",
+            "/run/current-system/sw/bin/bash",
+            "-lc",
+            &script,
+        ])
+        .output()
+        .await
+        .context("Failed to execute backend switch via systemd-run")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("Backend switch failed: {}", stderr.trim());
+    }
+
+    Ok(())
+}
 
 #[derive(Debug, Clone)]
 struct WirelessInterface {

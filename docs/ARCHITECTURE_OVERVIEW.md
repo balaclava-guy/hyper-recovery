@@ -332,6 +332,11 @@ System Ready
 5. System Packages (optional)
    nix/modules/system/base.nix
    └─ Add: scripts.hyper-connect
+
+6. Control Plane (recommended)
+   API Gateway (new)
+   └─ Host "system control" endpoints (WiFi backend switching, libvirt helpers, etc.)
+   └─ Prefer auth + auditing + a single surface over exposing these operations via the captive portal
 ```
 
 ---
