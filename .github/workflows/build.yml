@@ -154,9 +154,94 @@ jobs:
             echo "- preview_duration: \`$PREVIEW_DURATION\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  build-artifacts:
+    name: Build artifacts (fallback)
+    needs: resolve-options
+    # Run when Garnix fails (out of minutes, timeout, etc.)
+    if: |
+      needs.resolve-options.outputs.run_fetch_visual == 'true' &&
+      github.event_name == 'check_suite' &&
+      github.event.check_suite.app.slug == 'garnix-ci' &&
+      github.event.check_suite.conclusion != 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-options.outputs.ref }}
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo apt-get clean
+          df -h
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            substituters = https://cache.nixos.org https://cache.garnix.io
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=
+
+      - name: Build compressed artifacts
+        run: |
+          if [ "${{ needs.resolve-options.outputs.include_debug }}" = "true" ]; then
+            PKG="image-all-compressed"
+            echo "include_debug=true: building regular + debug artifacts"
+          else
+            PKG="image-compressed"
+            echo "Building regular artifacts only"
+          fi
+
+          echo "::group::Building $PKG"
+          nix build .#"$PKG" --out-link result-artifacts --print-build-logs
+          echo "::endgroup::"
+
+      - name: Stage Artifacts
+        run: |
+          mkdir -p dist
+          find -L result-artifacts -name "*.7z" -exec cp {} dist/ \;
+          echo "Contents of dist/:"
+          ls -lh dist/
+          count=$(ls dist/*.7z 2>/dev/null | wc -l)
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No .7z artifacts found in build result!"
+            exit 1
+          fi
+          echo "Found $count artifact(s)."
+
+      - name: Upload Live ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-iso
+          path: dist/hyper-recovery-live.iso.7z
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
+
+      - name: Upload Debug ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-iso
+          path: dist/hyper-recovery-debug.iso.7z
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 90
+
+      - name: Upload VM Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: vm-image
+          path: dist/hyper-recovery-vm.qcow2.7z
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 90
+
   fetch-artifacts:
     name: Fetch artifacts
     needs: resolve-options
+    # Run when Garnix succeeds (normal case)
     if: |
       needs.resolve-options.outputs.run_fetch_visual == 'true' &&
       (
@@ -258,7 +343,11 @@ jobs:
     needs:
       - resolve-options
       - fetch-artifacts
-    if: needs.fetch-artifacts.result == 'success'
+      - build-artifacts
+    if: |
+      always() &&
+      needs.resolve-options.result == 'success' &&
+      (needs.fetch-artifacts.result == 'success' || needs.build-artifacts.result == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -641,8 +730,11 @@ jobs:
 
   preview-vm:
     name: Preview VM
-    needs: [resolve-options, fetch-artifacts]
-    if: needs.resolve-options.outputs.run_preview == 'true'
+    needs: [resolve-options, fetch-artifacts, build-artifacts]
+    if: |
+      always() &&
+      needs.resolve-options.outputs.run_preview == 'true' &&
+      (needs.fetch-artifacts.result == 'success' || needs.build-artifacts.result == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
