@@ -69,9 +69,10 @@
     openFirewall = true;
     # Allow access from dynamic LAN IP/hostnames used by recovery images.
     allowed-origins = [ "*" ];
+    # Note: cockpit-zfs excluded due to Python version conflicts in NixOS 25.05
+    # cockpit-zfs brings in Python deps that conflict with other system packages
     plugins = with pkgs; [
       cockpit-machines
-      cockpit-zfs
       cockpit-files
     ];
     settings = {
@@ -81,17 +82,4 @@
       };
     };
   };
-
-  # Fix cockpit plugin discovery - the NixOS module doesn't create XDG_DATA_DIRS
-  # properly for the cockpit.service unit, only for wsinstance units.
-  systemd.services.cockpit.environment.XDG_DATA_DIRS =
-    let
-      pluginDirs = builtins.map (p: "${p}/share/cockpit") [
-        pkgs.cockpit-machines
-        pkgs.cockpit-zfs
-        pkgs.cockpit-files
-      ];
-      cockpitShare = "${pkgs.cockpit}/share";
-    in
-    pkgs.lib.concatStringsSep ":" ([ cockpitShare ] ++ pluginDirs);
 }
