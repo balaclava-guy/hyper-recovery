@@ -58,15 +58,46 @@ in
   # Ensure virtio_gpu is available for early KMS
   boot.initrd.availableKernelModules = [ "virtio_gpu" "virtio_pci" "9p" "9pnet_virtio" "dm_thin_pool" "dm_persistent_data" "dm_bio_prison" "dm_bufio" ];
 
-  # Ensure dm_thin_pool is loaded early in stage 2 boot, before udev triggers
-  # LVM activation. This prevents the "thin-pool target support missing" error
-  # when activating Proxmox thin-provisioned volumes.
   boot.kernelModules = [
     "dm_thin_pool"
     "dm_persistent_data"
     "dm_bio_prison"
     "dm_bufio"
   ];
+
+  # LVM thin-pool support for Proxmox "pve" volume groups.
+  #
+  # Two problems exist with udev-triggered LVM activation (`lvm-activate-<VG>`):
+  #
+  # 1. Race condition: udev detects the VG PVs and fires `vgchange -aay` via
+  #    systemd-run *before* systemd-modules-load has inserted dm_thin_pool
+  #    (observed: activation at ~2s, module at ~5s).
+  #
+  # 2. Missing userspace tool: LVM defaults to /usr/sbin/thin_check which does
+  #    not exist on NixOS.  Without it LVM refuses to activate thin pools.
+  #
+  # Fix (1) with a one-shot retry service ordered after modules are loaded.
+  # Fix (2) by pointing LVM at the Nix store paths via lvmlocal.conf.
+  environment.etc."lvm/lvmlocal.conf".text = ''
+    global {
+      thin_check_executable = "${pkgs.thin-provisioning-tools}/bin/thin_check"
+      thin_dump_executable = "${pkgs.thin-provisioning-tools}/bin/thin_dump"
+      thin_repair_executable = "${pkgs.thin-provisioning-tools}/bin/thin_repair"
+    }
+  '';
+
+  systemd.services.lvm-thin-activate = {
+    description = "Re-activate LVM thin-pool volumes after kernel modules are loaded";
+    after = [ "systemd-modules-load.service" ];
+    wants = [ "systemd-modules-load.service" ];
+    wantedBy = [ "multi-user.target" ];
+    # Reset the failed state of the racy udev-triggered unit, then retry.
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = "${pkgs.lvm2}/bin/vgchange -aay";
+    };
+  };
 
   # Firmware & wireless
   # Include all wireless firmware families without pulling the full firmware set.

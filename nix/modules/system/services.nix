@@ -44,10 +44,17 @@
 
   # libvirt-dbus is a system service (no interactive polkit agent). Give it
   # direct socket access for its backend connection.
-  systemd.services.libvirt-dbus.serviceConfig.SupplementaryGroups = [
-    "qemu-libvirtd"
-    "libvirtd"
-  ];
+  # cockpit-machines communicates with libvirt exclusively through libvirt-dbus.
+  # The upstream unit is only D-Bus activated, but the D-Bus service file is not
+  # installed into the system bus services directory on NixOS, so activation
+  # never fires.  Start it explicitly instead.
+  systemd.services.libvirt-dbus = {
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig.SupplementaryGroups = [
+      "qemu-libvirtd"
+      "libvirtd"
+    ];
+  };
 
   # Management Interface (Cockpit)
   services.cockpit = {
