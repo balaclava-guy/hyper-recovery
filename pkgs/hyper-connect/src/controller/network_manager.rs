@@ -460,11 +460,16 @@ pub async fn scan_networks(interface: &str) -> Result<Vec<NetworkInfo>> {
 pub async fn connect_to_network(interface: &str, ssid: &str, password: &str) -> Result<()> {
     tracing::info!(interface = %interface, ssid = %ssid, "Connecting to WiFi network");
 
-    // During AP mode we stop iwd and mark the device unmanaged to allow hostapd
-    // to take exclusive control. Ensure iwd is back before asking NetworkManager
-    // to activate a station connection.
+    // During AP mode we stop the WiFi backend and mark the device unmanaged to allow
+    // hostapd to take exclusive control. Ensure the backend is restarted before asking
+    // NetworkManager to activate a station connection.
+    let backend = current_wifi_backend().await.unwrap_or(WifiBackend::Iwd);
+    let service_name = match backend {
+        WifiBackend::Iwd => "iwd.service",
+        WifiBackend::WpaSupplicant => "wpa_supplicant.service",
+    };
     let _ = tokio::process::Command::new("systemctl")
-        .args(["start", "iwd.service"])
+        .args(["start", service_name])
         .output()
         .await;
 
