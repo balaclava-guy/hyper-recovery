@@ -97,4 +97,16 @@ in
       findutils
     ];
   };
+
+  # Developer utility: fetch latest live ISO artifact and copy to Ventoy
+  hyper-fetch-iso = makePythonScript {
+    name = "hyper-fetch-iso";
+    script = ../../../scripts/hyper-fetch-iso.py;
+    runtimeInputs = with pkgs; [
+      coreutils
+      git
+      gh
+      p7zip
+    ];
+  };
 }
