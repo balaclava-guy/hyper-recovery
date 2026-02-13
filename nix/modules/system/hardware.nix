@@ -92,10 +92,11 @@ in
     wants = [ "systemd-modules-load.service" ];
     wantedBy = [ "multi-user.target" ];
     # Reset the failed state of the racy udev-triggered unit, then retry.
+    path = [ pkgs.lvm2 ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
-      ExecStart = "${pkgs.lvm2}/bin/vgchange -aay";
+      ExecStart = "${pkgs.lvm2.bin}/bin/vgchange -aay";
     };
   };
 

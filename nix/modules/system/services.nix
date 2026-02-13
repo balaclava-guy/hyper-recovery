@@ -59,20 +59,6 @@
   # Management Interface (Cockpit)
   services.cockpit = {
     enable = true;
-    # TODO(2026-02-10): Temporary workaround.
-    # Cockpit Python version mismatch causing buildEnv path collision.
-    package =
-      let
-        base = pkgs.cockpit.overrideAttrs (old: {
-          passthru = (old.passthru or { }) // {
-            cockpitPath =
-              pkgs.lib.filter
-                (p: !(pkgs.lib.hasInfix "python3" (builtins.toString p)))
-                (old.passthru.cockpitPath or [ ]);
-          };
-        });
-      in
-      base;
     openFirewall = true;
     # Allow access from dynamic LAN IP/hostnames used by recovery images.
     allowed-origins = [ "*" ];
@@ -88,4 +74,17 @@
       };
     };
   };
+
+  # Fix cockpit plugin discovery - the NixOS module doesn't create XDG_DATA_DIRS
+  # properly for the cockpit.service unit, only for wsinstance units.
+  systemd.services.cockpit.environment.XDG_DATA_DIRS =
+    let
+      pluginDirs = builtins.map (p: "${p}/share/cockpit") [
+        pkgs.cockpit-machines
+        pkgs.cockpit-zfs
+        pkgs.cockpit-files
+      ];
+      cockpitShare = "${pkgs.cockpit}/share";
+    in
+    pkgs.lib.concatStringsSep ":" ([ cockpitShare ] ++ pluginDirs);
 }
