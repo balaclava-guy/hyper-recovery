@@ -60,6 +60,18 @@
   # The NixOS libvirtd module enables libvirt-dbus but doesn't add its D-Bus policy.
   services.dbus.packages = [ pkgs.libvirt-dbus ];
 
+  # Allow libvirt-dbus to access libvirtd without polkit authentication prompts.
+  # libvirt-dbus runs as a system service with no interactive polkit agent, so we
+  # grant it direct access to libvirt actions.
+  security.polkit.extraConfig = ''
+    polkit.addRule(function(action, subject) {
+        if (action.id.indexOf("org.libvirt.") == 0 &&
+            subject.user == "libvirtdbus") {
+            return polkit.Result.YES;
+        }
+    });
+  '';
+
   # Management Interface (Cockpit)
   services.cockpit = {
     enable = true;
