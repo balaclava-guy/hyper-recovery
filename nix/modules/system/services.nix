@@ -24,6 +24,10 @@
       package = pkgs.qemu_kvm;
       runAsRoot = true;
       swtpm.enable = true;
+      # Fix bridge helper path for NixOS (it's in /run/wrappers/bin, not /usr/libexec)
+      verbatimConfig = ''
+        bridge_helper = "/run/wrappers/bin/qemu-bridge-helper"
+      '';
     };
   };
 
