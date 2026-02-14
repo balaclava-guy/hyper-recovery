@@ -14,6 +14,7 @@ let
           self.nixosModules.hardware
           self.nixosModules.branding
           self.nixosModules.services
+          self.nixosModules.immutable-vms
           self.nixosModules.hyper-connect
 
           # ISO image infrastructure
@@ -33,6 +34,12 @@ let
               enable = true;
               autoStartTui = true;
             };
+
+            # Enable immutable VM management
+            services.immutable-vms = {
+              enable = true;
+              autoStartNetwork = true;
+            };
           }
         ]
         ++ inputs.nixpkgs.lib.optionals debug [
@@ -48,6 +55,7 @@ in
     hardware = import ../modules/system/hardware.nix;
     branding = import ../modules/system/branding.nix;
     services = import ../modules/system/services.nix;
+    immutable-vms = import ../modules/system/immutable-vms.nix;
     debug = import ../modules/system/debug.nix;
     hyper-connect = import ../modules/system/hyper-connect.nix;
     iso-base = import ../modules/iso/base.nix;
