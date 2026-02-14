@@ -60,6 +60,13 @@
   # The NixOS libvirtd module enables libvirt-dbus but doesn't add its D-Bus policy.
   services.dbus.packages = [ pkgs.libvirt-dbus ];
 
+  # Ensure virtlogd (VM logging daemon) is started with libvirtd.
+  # Required for QEMU VMs to capture console output and logs.
+  systemd.services.virtlogd = {
+    wantedBy = [ "multi-user.target" ];
+    before = [ "libvirtd.service" ];
+  };
+
   # Allow libvirt-dbus to access libvirtd without polkit authentication prompts.
   # libvirt-dbus runs as a system service with no interactive polkit agent, so we
   # grant it direct access to libvirt actions.
