@@ -60,6 +60,19 @@
   # The NixOS libvirtd module enables libvirt-dbus but doesn't add its D-Bus policy.
   services.dbus.packages = [ pkgs.libvirt-dbus ];
 
+  # Mask user session libvirt-dbus to prevent Cockpit from using it instead of
+  # the system instance. Cockpit-machines should always connect to system libvirt.
+  # Create a masked service file in /etc/systemd/user/ to override the package-provided one.
+  environment.etc."systemd/user/libvirt-dbus.service".text = ''
+    # Masked to prevent D-Bus activation - Cockpit should use system libvirt only
+    [Unit]
+    Description=Libvirt DBus Service (masked)
+
+    [Service]
+    Type=oneshot
+    ExecStart=/run/current-system/sw/bin/false
+  '';
+
   # Ensure virtlogd (VM logging daemon) is started with libvirtd.
   # Required for QEMU VMs to capture console output and logs.
   systemd.services.virtlogd = {
@@ -88,7 +101,7 @@
     plugins = with pkgs; [
       cockpit-machines
       cockpit-files
-      cockpit-zfs
+      # cockpit-zfs  # Disabled: Python version conflict with other plugins
     ];
     settings = {
       WebService = {

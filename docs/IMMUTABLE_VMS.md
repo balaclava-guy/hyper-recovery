@@ -88,6 +88,8 @@ sudo qemu-system-x86_64 \
 
 For integration with Cockpit and virsh:
 
+#### BIOS Boot (Legacy Systems)
+
 ```xml
 <domain type='kvm'>
   <name>my-imported-os</name>
@@ -102,7 +104,6 @@ For integration with Cockpit and virsh:
       <driver name='qemu' type='qcow2' cache='none'/>
       <source file='/var/lib/libvirt/images/my-os-overlay.qcow2'/>
       <target dev='vda' bus='virtio'/>
-      <address type='pci' domain='0x0000' bus='0x00' slot='0x04' function='0x0'/>
     </disk>
     <interface type='network'>
       <source network='default'/>
@@ -112,6 +113,51 @@ For integration with Cockpit and virsh:
   </devices>
 </domain>
 ```
+
+#### UEFI Boot (Recommended for GPT disks)
+
+```xml
+<domain type='kvm'>
+  <name>my-imported-os</name>
+  <memory unit='GiB'>4</memory>
+  <vcpu>2</vcpu>
+  <os>
+    <type arch='x86_64' machine='q35'>hvm</type>
+    <loader readonly='yes' type='pflash'>/run/libvirt/nix-ovmf/edk2-x86_64-code.fd</loader>
+    <boot dev='hd'/>
+  </os>
+  <features>
+    <acpi/>
+    <apic/>
+  </features>
+  <cpu mode='host-passthrough'/>
+  <clock offset='utc'/>
+  <devices>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2' cache='none'/>
+      <source file='/var/lib/libvirt/images/my-os-overlay.qcow2'/>
+      <target dev='vda' bus='virtio'/>
+      <!-- For Advanced Format drives (4K sectors), add: -->
+      <blockio logical_block_size='512' physical_block_size='4096'/>
+    </disk>
+    <interface type='network'>
+      <source network='default'/>
+      <model type='virtio'/>
+    </interface>
+    <console type='pty'>
+      <target type='serial' port='0'/>
+    </console>
+    <graphics type='vnc' port='-1' autoport='yes' listen='0.0.0.0'>
+      <listen type='address' address='0.0.0.0'/>
+    </graphics>
+    <video>
+      <model type='qxl'/>
+    </video>
+  </devices>
+</domain>
+```
+
+**Note**: Use UEFI boot for modern systems with GPT partition tables, especially those with Advanced Format (4K sector) drives.
 
 Define the VM:
 
@@ -306,6 +352,180 @@ security.polkit.extraConfig = ''
   });
 '';
 ```
+
+### Issue 4: Advanced Format Drives (4K Sectors)
+
+**Symptom**: Some SATA SSDs (like Crucial MX500) have 4K physical sectors but 512-byte logical sectors. When booted with BIOS firmware, the VM hangs at "Booting from Hard Disk..." with 99.7% CPU usage.
+
+**Root Cause**: Block size mismatch between the physical drive (4096-byte physical sectors) and QEMU's default emulation (512-byte physical sectors).
+
+**Detection**:
+```bash
+# Check physical block size
+cat /sys/block/sda/queue/physical_block_size  # 4096 = Advanced Format
+cat /sys/block/nvme0n1/queue/physical_block_size  # 512 = traditional
+
+# Check logical block size
+cat /sys/block/sda/queue/logical_block_size  # Usually 512 for both
+```
+
+**Solution**: Use UEFI firmware instead of BIOS, and specify block sizes explicitly:
+
+```xml
+<domain type='kvm'>
+  <name>pve-sata</name>
+  <os>
+    <type arch='x86_64' machine='q35'>hvm</type>
+    <loader readonly='yes' type='pflash'>/run/libvirt/nix-ovmf/edk2-x86_64-code.fd</loader>
+    <boot dev='hd'/>
+  </os>
+  <devices>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2' cache='none'/>
+      <source file='/var/lib/libvirt/images/pve-sata-overlay.qcow2'/>
+      <target dev='vda' bus='virtio'/>
+      <blockio logical_block_size='512' physical_block_size='4096'/>
+    </disk>
+    <graphics type='vnc' port='-1' autoport='yes' listen='0.0.0.0'>
+      <listen type='address' address='0.0.0.0'/>
+    </graphics>
+    <video>
+      <model type='qxl'/>
+    </video>
+  </devices>
+</domain>
+```
+
+**Key Points**:
+- **UEFI boot required**: BIOS boot fails with GPT + 4K sectors
+- **Block sizes**: Use `<blockio logical_block_size='512' physical_block_size='4096'/>`
+- **VNC console**: Add graphics device to see kernel output (Proxmox doesn't output to serial by default)
+- **q35 machine**: Required for UEFI firmware support
+
+**Why UEFI works**: UEFI firmware handles GPT partition tables natively and doesn't have the same sector size assumptions as legacy BIOS.
+
+### Issue 5: tmpfs Disk Space Exhaustion (CRITICAL)
+
+**Incident Date**: 2026-02-14
+
+**Symptom**: System completely unresponsive - SSH hangs, Cockpit hangs, TTYs won't spawn, VMs paused with I/O errors.
+
+**Root Cause**: Created a 100GB RAW disk image on tmpfs (RAM filesystem) which only had 15GB total capacity. When ZFS pool was created and started allocating real space (14GB), the tmpfs filled to 100%, causing all I/O operations to fail.
+
+**What Happened**:
+1. Created `/var/lib/libvirt/images/barbican-zfs.img` (100GB) on tmpfs for ZFS storage
+2. ZFS pool creation allocated 14GB of real space on the sparse file
+3. During VM migration, overlays tried to grow, hitting 100% disk usage
+4. VMs paused with "I/O error" status
+5. All processes requiring disk I/O hung (SSH, Cockpit, getty, systemd services)
+6. System became completely unresponsive except for ping/network stack
+
+**Impact**:
+- Complete system lockup requiring hard reboot
+- Potential loss of all changes in QCOW2 overlays (stored in tmpfs)
+- Risk of losing network configurations and other VM state
+
+**Recovery Steps Taken**:
+1. Attempted SSH commands - all hung due to full disk
+2. Tried Cockpit web interface - also hung
+3. Physical console access - TTY switch worked but no getty spawned
+4. Magic SysRq keys on physical keyboard:
+   - `Alt+SysRq+S` (Emergency Sync) - **WORKED** (flushed buffers)
+   - `Alt+SysRq+F` (OOM Killer) - Disabled in kernel config
+   - Most other SysRq operations disabled
+5. Hard power cycle (reset button) after Emergency Sync
+6. System recovered on reboot with VM overlays intact
+
+**Prevention**:
+```bash
+# ❌ NEVER DO THIS on tmpfs/RAM filesystem:
+sudo qemu-img create -f raw /var/lib/libvirt/images/large-disk.img 100G
+
+# ✅ CORRECT: Check available space first
+df -h /var/lib/libvirt/images
+
+# ✅ CORRECT: Use appropriate storage location
+# For Hyper Recovery (tmpfs root), large disk images should be:
+# 1. Stored on mounted physical disks
+# 2. Or use sparse QCOW2 format (not RAW)
+# 3. Or created on persistent storage only
+```
+
+**Safe Approach for Additional VM Disks**:
+
+**Option 1: Mount Real Filesystem**
+```bash
+# Create mount point on persistent storage
+sudo mkdir -p /mnt/vm-storage
+sudo mount /dev/sda3 /mnt/vm-storage  # Use actual partition
+
+# Create disk images there
+sudo qemu-img create -f raw /mnt/vm-storage/zfs-disk.img 100G
+```
+
+**Option 2: Use QCOW2 Format (More Space Efficient)**
+```bash
+# QCOW2 starts small and grows as needed
+sudo qemu-img create -f qcow2 /var/lib/libvirt/images/zfs-disk.qcow2 100G
+# Initial size: ~200KB, grows only as data is written
+```
+
+**Option 3: Attach Physical Disk/Partition Directly**
+```xml
+<!-- Attach a real partition or whole disk -->
+<disk type='block' device='disk'>
+  <driver name='qemu' type='raw'/>
+  <source dev='/dev/sdb'/>
+  <target dev='vdb' bus='virtio'/>
+</disk>
+```
+
+**Monitoring Disk Space**:
+```bash
+# Always check before creating large files
+df -h /var/lib/libvirt/images
+
+# Monitor overlay growth
+watch -n 5 'du -sh /var/lib/libvirt/images/*.qcow2'
+
+# Check tmpfs usage
+df -h / | grep tmpfs
+```
+
+**Emergency Recovery Tools**:
+
+If system becomes unresponsive due to full disk:
+
+1. **Magic SysRq Keys** (on physical keyboard):
+   ```
+   Alt + SysRq + S  (Emergency Sync - flush buffers)
+   Alt + SysRq + F  (Invoke OOM Killer - if enabled)
+   ```
+
+2. **REISUB Sequence** (safe reboot for hung systems):
+   ```
+   R - Take keyboard back from X
+   E - Terminate all processes (SIGTERM)
+   I - Kill all processes (SIGKILL)
+   S - Sync filesystems
+   U - Remount read-only
+   B - Reboot
+   ```
+   Note: Many SysRq operations may be disabled in NixOS kernel config
+
+3. **Last Resort**: Hard reset/power cycle
+   - Use after attempting Emergency Sync (Alt+SysRq+S)
+   - Minimizes risk of data loss in overlays
+
+**Lessons Learned**:
+- **Always check filesystem type** before creating large files (`df -T`)
+- **tmpfs capacity equals RAM** - treat it as limited
+- **RAW format allocates full size** on some filesystems
+- **Emergency Sync saved configurations** - overlay files were properly flushed
+- **Network stack survives** I/O hangs (ping still worked)
+- **Magic SysRq is critical** for recovery on physical systems
+
+**Status**: Resolved. System recovered after hard reboot with VM network configurations intact. Future deployments will use persistent storage for large disk images.
 
 ## Future Enhancements
 
