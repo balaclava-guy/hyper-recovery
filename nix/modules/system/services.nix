@@ -85,11 +85,10 @@
     openFirewall = true;
     # Allow access from dynamic LAN IP/hostnames used by recovery images.
     allowed-origins = [ "*" ];
-    # Note: cockpit-zfs excluded due to Python version conflicts in NixOS 25.05
-    # cockpit-zfs brings in Python deps that conflict with other system packages
     plugins = with pkgs; [
       cockpit-machines
       cockpit-files
+      cockpit-zfs
     ];
     settings = {
       WebService = {
