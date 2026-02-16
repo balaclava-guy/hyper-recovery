@@ -7,6 +7,7 @@
 python3.pkgs.buildPythonApplication rec {
   pname = "lxconsole";
   version = "unstable-2025-02-16";
+  format = "other";  # No setup.py, we'll install manually
 
   src = fetchFromGitHub {
     owner = "PenningLabs";
@@ -21,6 +22,8 @@ python3.pkgs.buildPythonApplication rec {
     requests
     urllib3
   ];
+
+  dontBuild = true;
 
   # Don't run tests (requires incus server)
   doCheck = false;
