@@ -7,11 +7,11 @@
 }:
 
 let
-  version = import ../version.nix;
+  versionInfo = import ../version.nix;
 in
 rustPlatform.buildRustPackage rec {
   pname = "hyper-connect";
-  version = version.version;
+  version = versionInfo.version;
 
   src = ../../pkgs/hyper-connect;
 
