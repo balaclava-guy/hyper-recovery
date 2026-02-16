@@ -103,6 +103,13 @@ in
     "d /var/lib/lxconsole 0750 lxconsole lxconsole -"
   ];
 
+  # Add LXConsole info to MOTD
+  environment.etc."profile.d/lxconsole-motd.sh".text = ''
+    echo ""
+    echo "  🌐 LXConsole Web UI: http://$(hostname -I | awk '{print $1}'):5000"
+    echo ""
+  '';
+
   # Open firewall for lxconsole
   networking.firewall.allowedTCPPorts = [ 5000 ];
 }
