@@ -53,6 +53,7 @@ python3.pkgs.buildPythonApplication rec {
     cp $src/run.py $out/share/lxconsole/
 
     # Create wrapper script that runs the Flask app
+    # Note: SystemD sets WorkingDirectory to /var/lib/lxconsole with symlinks to assets
     cat > $out/bin/lxconsole <<EOF
 #!${python3}/bin/python3
 import os
@@ -73,11 +74,8 @@ def _patched_flask_init(self, *args, **kwargs):
 
 flask.Flask.__init__ = _patched_flask_init
 
-# Add share directory to Python path so 'lxconsole' package can be imported
-sys.path.insert(0, '$out/share/lxconsole')
-
-# Change to the application directory
-os.chdir('$out/share/lxconsole')
+# Add current directory to Python path (contains lxconsole package via symlink)
+sys.path.insert(0, os.getcwd())
 
 # Import and run the Flask application
 from run import app

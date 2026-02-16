@@ -66,11 +66,20 @@ in
     wants = [ "incus.service" ];
     wantedBy = [ "multi-user.target" ];
 
+    # Set up symlinks to static assets in writable directory
+    preStart = ''
+      cd /var/lib/lxconsole
+      ln -sf ${lxconsole}/share/lxconsole/static static
+      ln -sf ${lxconsole}/share/lxconsole/templates templates
+      ln -sf ${lxconsole}/share/lxconsole/lxconsole lxconsole
+      ln -sf ${lxconsole}/share/lxconsole/run.py run.py
+    '';
+
     serviceConfig = {
       Type = "simple";
       User = "lxconsole";
       Group = "lxconsole";
-      WorkingDirectory = "${lxconsole}/share/lxconsole";
+      WorkingDirectory = "/var/lib/lxconsole";
       ExecStart = "${lxconsole}/bin/lxconsole";
       Restart = "on-failure";
       RestartSec = "10s";
