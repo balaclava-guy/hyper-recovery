@@ -25,7 +25,7 @@
 #   4. Tag: `git tag -a v0.2.0 -m "Release 0.2.0"`
 #   5. Push: `git push && git push --tags`
 
-{
+rec {
   # Semantic version - UPDATE THIS MANUALLY FOR RELEASES
   version = "0.1.0";
 
