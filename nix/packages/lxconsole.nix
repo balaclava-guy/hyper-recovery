@@ -18,9 +18,20 @@ python3.pkgs.buildPythonApplication rec {
 
   propagatedBuildInputs = with python3.pkgs; [
     flask
+    flask-sqlalchemy
+    flask-bcrypt
+    flask-login
     flask-wtf
+    flask-sock
+    pyopenssl
+    pyotp
+    qrcode
     requests
-    urllib3
+    wtforms
+    email-validator
+    gunicorn
+    werkzeug
+    websocket-client
   ];
 
   dontBuild = true;
