@@ -1,7 +1,7 @@
 { pkgs, lib }:
 
 let
-  version = import ../version.nix;
+  version = import ../../version.nix;
 
   # Helper function to create a Python script package
   makePythonScript = { name, script, runtimeInputs ? [] }:

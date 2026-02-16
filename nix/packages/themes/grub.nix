@@ -1,7 +1,7 @@
 { pkgs, lib }:
 
 let
-  version = import ../version.nix;
+  version = import ../../version.nix;
 in
 pkgs.stdenvNoCC.mkDerivation {
   pname = "snosu-grub-theme";
