@@ -41,10 +41,10 @@ let
               autoStartTui = true;
             };
 
-            # Enable immutable VM management
+            # Enable incus container management
             services.immutable-vms = {
               enable = true;
-              autoStartNetwork = true;
+              autoInit = true;
             };
           }
         ]
