@@ -1,11 +1,13 @@
 { pkgs, lib }:
 
 let
+  version = import ../version.nix;
+
   # Helper function to create a Python script package
   makePythonScript = { name, script, runtimeInputs ? [] }:
     pkgs.stdenv.mkDerivation {
       pname = name;
-      version = "1.0.0";
+      version = version.version;
       
       dontUnpack = true;
       dontBuild = true;
@@ -109,6 +111,18 @@ in
       p7zip
       rsync
       openssh
+    ];
+  };
+
+  # Developer utility: deploy to Proxmox test VMs
+  deploy-to-proxmox = makePythonScript {
+    name = "deploy-to-proxmox";
+    script = ../../../scripts/deploy-to-proxmox.py;
+    runtimeInputs = with pkgs; [
+      coreutils
+      nix
+      openssh
+      rsync
     ];
   };
 }

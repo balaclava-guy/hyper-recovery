@@ -1,8 +1,11 @@
 { pkgs, lib }:
 
+let
+  version = import ../version.nix;
+in
 pkgs.stdenvNoCC.mkDerivation {
   pname = "snosu-grub-theme";
-  version = "1.0.0";
+  version = version.version;
   
   src = ../../../themes/grub/hyper-recovery;
   fontSrc = ../../../assets/fonts/undefined-medium/undefined-medium.ttf;

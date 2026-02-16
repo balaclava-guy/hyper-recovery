@@ -51,28 +51,11 @@ in
   boot.loader.grub.memtest86.enable = false;
 
   #############################################################################
-  # COCKPIT WEB UI BRANDING
+  # WEB UI BRANDING (LXCONSOLE)
   #############################################################################
-  
-  # Cockpit login title
-  services.cockpit.settings.WebService.LoginTitle = lib.mkDefault "SNOSU: Hyper Recovery";
-  
-  # Cockpit 353+ reads branding from flat files in /etc/cockpit/branding/
-  environment.etc = {
-    "cockpit/branding/branding.css".source = "${brandingDir}/branding.css";
-    "cockpit/branding/logo.png".source = "${brandingDir}/logo-source.png";
-    "cockpit/branding/brand-large.png".source = "${brandingDir}/logo-source.png";
-    "cockpit/branding/apple-touch-icon.png".source = "${brandingDir}/logo-source.png";
-    "cockpit/branding/favicon.ico".source = "${brandingDir}/logo-source.png";
-    
-    # Legacy layout for compatibility with older Cockpit behavior
-    "cockpit/branding/snosu/branding.ini".source = "${brandingDir}/branding.ini";
-    "cockpit/branding/snosu/branding.css".source = "${brandingDir}/branding.css";
-    "cockpit/branding/snosu/logo.png".source = "${brandingDir}/logo-source.png";
-    "cockpit/branding/snosu/brand-large.png".source = "${brandingDir}/logo-source.png";
-    "cockpit/branding/snosu/apple-touch-icon.png".source = "${brandingDir}/logo-source.png";
-    "cockpit/branding/snosu/favicon.ico".source = "${brandingDir}/logo-source.png";
-  };
+
+  # Placeholder for future lxconsole branding
+  # Will be populated when lxconsole package is added
 
   #############################################################################
   # TERMINAL MOTD
@@ -80,7 +63,7 @@ in
   
   environment.etc."motd".text = ''
     Welcome to SNOSU: Hyper Recovery Environment
-    * Access the Web UI at: https://<IP>:9090
+    * Access the Web UI at: http://<IP>:5000
     * Default user: snosu / nixos
   '';
 

@@ -22,6 +22,7 @@
         pkg-config
         openssl
         scripts."hyper-fetch-iso"
+        scripts."deploy-to-proxmox"
       ] ++ lib.optionals (system == "aarch64-darwin") [
         clang
         libiconv
@@ -87,6 +88,18 @@
           category = "dev";
         }
         {
+          name = "deploy-proxmox";
+          command = "nix run .#deploy-to-proxmox";
+          help = "Build and deploy to Proxmox test VMs";
+          category = "deploy";
+        }
+        {
+          name = "deploy-proxmox-debug";
+          command = "nix run .#deploy-to-proxmox -- --debug";
+          help = "Build and deploy debug image to Proxmox test VMs";
+          category = "deploy";
+        }
+        {
           name = "show-packages";
           command = "nix flake show";
           help = "Show all flake outputs";
@@ -113,7 +126,8 @@
         
         {bold}Quick Start:{reset}
           build-usb          - Build regular recovery image
-          build-usb-debug    - Build debug recovery image  
+          build-usb-debug    - Build debug recovery image
+          deploy-proxmox     - Build and deploy to Proxmox test VMs
           check              - Validate flake
           run-theme-vm       - Preview boot themes
       '';

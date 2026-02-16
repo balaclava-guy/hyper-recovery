@@ -6,9 +6,12 @@
 , openssl
 }:
 
+let
+  version = import ../version.nix;
+in
 rustPlatform.buildRustPackage rec {
   pname = "hyper-connect";
-  version = "0.1.0";
+  version = version.version;
 
   src = ../../pkgs/hyper-connect;
 

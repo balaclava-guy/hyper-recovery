@@ -23,26 +23,45 @@ The devshell at `nix/flake/devshells.nix` provides:
 All commands are wrapped into shell aliases (see `devshells.default.commands`):
 - `build-usb` - Build regular USB image
 - `build-usb-debug` - Build debug USB image
+- `deploy-proxmox` - Build and deploy to Proxmox test VMs
+- `deploy-proxmox-debug` - Build and deploy debug image to Proxmox
 - `check` - Validate flake
 - `run-theme-vm` - Preview boot themes locally
 - `fetch-latest-iso` - Deploy latest ISO to Ventoy USB
 
 ## Project Overview
 
-**Hyper Recovery** is a portable hypervisor USB system based on NixOS that:
+**Hyper Recovery** is a portable container and VM platform based on NixOS that:
 - Boots from USB on any computer (BIOS or EFI mode)
-- Provides KVM/QEMU/libvirt for running VMs
-- Includes Cockpit web interface (port 9090) for management
+- Provides Incus for managing containers and VMs
+- Includes LXConsole web interface (port 5000) for management
 - Supports ZFS pools (import existing Proxmox pools)
-- Includes recovery tools like Clonezilla (via VM)
+- Includes recovery tools and container images
 - Custom themed GRUB2 and Plymouth boot screens
 
-**Important**: This is NOT an installer ISO. It's a hypervisor recovery platform.
+**Important**: This is NOT an installer ISO. It's a container/VM recovery platform.
+
+## Versioning
+
+The project uses **semantic versioning** (MAJOR.MINOR.PATCH) defined centrally in `nix/version.nix`:
+- All packages, images, and filenames use this version
+- **Manual version bumps**: Update `nix/version.nix` when preparing a release
+- **Don't bump for every commit**: Only bump when releasing
+- Image filenames follow: `${fullName}-${version}-${system}[-debug].iso`
+- Example: `snosu-hyper-recovery-0.1.0-x86_64-linux.iso`
+
+**When to bump**:
+- PATCH (0.1.0 → 0.1.1): Bug fixes, minor tweaks
+- MINOR (0.1.0 → 0.2.0): New features, significant changes
+- MAJOR (0.1.0 → 1.0.0): Breaking changes
+
+See `docs/VERSIONING.md` for detailed versioning workflow.
 
 ## File Structure
 
 ```
 nix/
+├── version.nix            # Central version definition (single source of truth)
 ├── flake/                 # Flake module definitions
 │   ├── images.nix         # NixOS configurations (usb-live, vm, etc.)
 │   ├── packages.nix       # Package definitions
@@ -52,8 +71,8 @@ nix/
 │   ├── system/            # System modules
 │   │   ├── base.nix       # Core system, networking, users
 │   │   ├── hardware.nix   # Kernel modules, firmware, drivers
-│   │   ├── branding.nix   # GRUB, Plymouth, Cockpit themes
-│   │   ├── services.nix   # Cockpit, virtualization
+│   │   ├── branding.nix   # GRUB, Plymouth, LXConsole themes
+│   │   ├── services.nix   # Incus, LXConsole, virtualization
 │   │   ├── hyper-connect.nix  # WiFi setup daemon
 │   │   └── debug.nix      # Debug logging/services (optional)
 │   └── iso/               # ISO-specific modules
@@ -101,6 +120,7 @@ Run `nix build .#<target>`:
 Available via `nix run .#<name>`:
 
 - `hyper-fetch-iso` - Deploy ISO from GitHub Actions
+- `deploy-to-proxmox` - Build and deploy to Proxmox test VMs
 - `hyper-debug` - Collect system diagnostics
 - `hyper-hw` - Switch firmware modes (core/full)
 
@@ -145,6 +165,39 @@ Before pushing changes to a remote repository:
 - Run relevant builds (e.g., `build-usb`) to ensure no breakage
 
 ## Common Workflows
+
+### Proxmox Deployment
+
+The project includes an automated deployment workflow for Proxmox:
+
+```bash
+# Build on remote x86 builder and deploy to Proxmox test VMs
+nix run .#deploy-to-proxmox
+
+# Deploy debug variant
+nix run .#deploy-to-proxmox -- --debug
+
+# Or use devshell aliases
+deploy-proxmox
+deploy-proxmox-debug
+```
+
+This workflow:
+1. Builds the image using the remote x86 builder at `nixos-builder-x86.xjn.io`
+2. Transfers the ISO to Proxmox at `10.10.100.119:/var/lib/vz/template/iso/`
+3. Creates/updates two test VMs:
+   - VM 9001: BIOS/SeaBIOS mode
+   - VM 9002: UEFI/OVMF mode
+4. Mounts the newly built ISO to both VMs
+
+You can customize the deployment:
+```bash
+nix run .#deploy-to-proxmox -- \
+  --proxmox-host 10.10.100.119 \
+  --proxmox-user root \
+  --vmid-bios 9001 \
+  --vmid-uefi 9002
+```
 
 ### Adding a New System Module
 

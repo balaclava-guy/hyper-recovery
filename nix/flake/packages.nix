@@ -3,31 +3,47 @@
 # Flake-parts module for package definitions
 # Exports theme packages, scripts, and utilities
 
+let
+  version = import ../version.nix;
+in
 {
-  perSystem = { pkgs, system, lib, ... }: {
+  perSystem = { pkgs, system, lib, ... }:
+    let
+      scripts = pkgs.callPackage ../packages/scripts {};
+    in
+    {
     packages = lib.optionalAttrs pkgs.stdenv.isLinux {
       # Theme packages
       snosu-plymouth-theme = pkgs.callPackage ../packages/themes/plymouth.nix {};
       snosu-grub-theme = pkgs.callPackage ../packages/themes/grub.nix {};
-      
-       # Script packages
-       hyper-debug = (pkgs.callPackage ../packages/scripts {}).hyper-debug;
-       hyper-hw = (pkgs.callPackage ../packages/scripts {}).hyper-hw;
-       hyper-debug-serial = (pkgs.callPackage ../packages/scripts {}).hyper-debug-serial;
-       save-boot-logs = (pkgs.callPackage ../packages/scripts {}).save-boot-logs;
-       hyper-ci-debug = (pkgs.callPackage ../packages/scripts {}).hyper-ci-debug;
-       hyper-fetch-iso = (pkgs.callPackage ../packages/scripts {}).hyper-fetch-iso;
+
+       # Script packages (Linux only)
+       hyper-debug = scripts.hyper-debug;
+       hyper-hw = scripts.hyper-hw;
+       hyper-debug-serial = scripts.hyper-debug-serial;
+       save-boot-logs = scripts.save-boot-logs;
+       hyper-ci-debug = scripts.hyper-ci-debug;
       
        # Firmware package
        hyper-firmware-core = (pkgs.callPackage ../packages/firmware.nix {}).hyper-firmware-core;
       
       # WiFi setup daemon
       hyper-connect = pkgs.callPackage ../packages/hyper-connect.nix {};
+
+      # LXConsole web UI for incus
+      lxconsole = pkgs.callPackage ../packages/lxconsole.nix {};
     } // {
+      # Cross-platform packages
+      # These work on both Linux and macOS
+
+      # Development/deployment scripts
+      hyper-fetch-iso = scripts.hyper-fetch-iso;
+      deploy-to-proxmox = scripts.deploy-to-proxmox;
+
       # Theme VM (cross-platform)
       theme-vm = pkgs.stdenvNoCC.mkDerivation {
         pname = "theme-vm";
-        version = "0.1.0";
+        version = version.version;
         dontUnpack = true;
 
         installPhase = ''

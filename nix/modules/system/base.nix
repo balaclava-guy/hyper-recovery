@@ -40,7 +40,6 @@ in
     iwd wpa_supplicant dhcpcd udisks2
     networkmanager  # nmcli
     iw
-    virt-manager # provides virt-install/virt-clone for VM creation
     plymouth  # For Plymouth debugging
     scripts.hyper-debug  # User-triggered diagnostics
     scripts.hyper-hw     # Firmware management
@@ -57,15 +56,9 @@ in
   users.users.snosu = {
     isNormalUser = true;
     password = "nixos";
-    # Allow Cockpit/libvirt access without root
-    # Note: "libvirt" group is required for libvirt-dbus D-Bus policy
-    extraGroups = [ "wheel" "libvirtd" "libvirt" "kvm" ];
+    # Allow incus access without root
+    extraGroups = [ "wheel" "incus-admin" ];
   };
-
-  # Create "libvirt" group for libvirt-dbus D-Bus policy compatibility.
-  # The upstream libvirt-dbus D-Bus policy expects "libvirt" group, but NixOS
-  # uses "libvirtd". We need both for full compatibility.
-  users.groups.libvirt = {};
 
   # SSH
   services.openssh = {

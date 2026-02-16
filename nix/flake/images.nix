@@ -4,6 +4,8 @@
 # Defines nixosConfigurations and image build outputs
 
 let
+  version = import ../version.nix;
+
   mkUsbImage = { debug ? false }:
     inputs.nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
@@ -23,11 +25,15 @@ let
 
           # Shared image specifics
           {
-            isoImage.volumeID = if debug then "HYPER-RECOVERY-DEBUG" else "HYPER-RECOVERY";
+            isoImage.volumeID = if debug then version.volumeIdDebug else version.volumeId;
             image.baseName = inputs.nixpkgs.lib.mkForce (
-              if debug then "snosu-hyper-recovery-debug-x86_64-linux" else "snosu-hyper-recovery-x86_64-linux"
+              version.mkBaseName {
+                version = version.version;
+                system = "x86_64-linux";
+                debug = debug;
+              }
             );
-            isoImage.prependToMenuLabel = if debug then "START HYPER RECOVERY (Debug)" else "START HYPER RECOVERY";
+            isoImage.prependToMenuLabel = if debug then "START HYPER RECOVERY v${version.version} (Debug)" else "START HYPER RECOVERY v${version.version}";
 
             # Enable WiFi setup service
             services.hyper-connect = {
@@ -97,9 +103,9 @@ in
               parent_path=$(dirname "$file")
 
               if [[ "$parent_path" == *"debug"* ]]; then
-                out_name="hyper-recovery-debug.iso.7z"
+                out_name="${version.fullName}-${version.version}-debug.iso.7z"
               else
-                out_name="hyper-recovery-live.iso.7z"
+                out_name="${version.fullName}-${version.version}.iso.7z"
               fi
 
               echo "Compressing $base_name -> $out_name..."

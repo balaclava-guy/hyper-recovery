@@ -7,10 +7,10 @@
 This repository contains a Nix Flake to generate a portable hypervisor USB system based on NixOS.
 
 ## Features
-- **Portable Hypervisor Platform**: Live USB system with KVM/QEMU/Libvirt
+- **Portable Container & VM Platform**: Live USB system with Incus (LXC/LXD)
 - **Hybrid Boot**: Works in both BIOS and EFI modes
 - **Ventoy Compatible**: Can be copied to Ventoy partition or written directly to USB
-- **Cockpit Management**: Web interface for managing VMs and system (Port 9090)
+- **LXConsole Management**: Web interface for managing containers and VMs (Port 5000)
 - **ZFS Support**: Includes ZFS kernel modules and tools
 - **Rescue/Recovery**: Tools to import existing ZFS pools (Proxmox) and fix issues
 - **Themed Boot**: Custom GRUB2 and Plymouth themes
@@ -18,10 +18,10 @@ This repository contains a Nix Flake to generate a portable hypervisor USB syste
 
 ## What is Hyper Recovery?
 
-Hyper Recovery is **not** a traditional live CD installer. It's a **portable hypervisor environment** that:
+Hyper Recovery is **not** a traditional live CD installer. It's a **portable container and VM platform** that:
 - Boots from USB on any computer (BIOS or EFI)
-- Provides a hypervisor interface to boot local drives in VMs
-- Includes recovery VMs like Clonezilla
+- Provides Incus for managing containers and VMs
+- Includes recovery tools and container images
 - Does **not** persist computer-specific data on the USB
 - Acts as a recovery and virtualization platform
 
@@ -129,7 +129,7 @@ When you use `[debug]` or `[ci-debug]` in your commit message, the workflow will
    - Block devices and mounts
    - Systemd service status (including failed services)
    - Plymouth configuration and status
-   - Full journal logs (boot, Plymouth, Cockpit, WiFi, NetworkManager)
+   - Full journal logs (boot, Plymouth, LXConsole, WiFi, NetworkManager)
    - Kernel messages (dmesg)
    - Graphics/DRM information
    - Network configuration
@@ -149,7 +149,7 @@ ci-debug-logs/
     ├── system-info.txt
     ├── journal.txt
     ├── journal-plymouth.txt
-    ├── journal-cockpit.txt
+    ├── journal-lxconsole.txt
     ├── dmesg.txt
     ├── systemd-failed.txt
     ├── plymouth.txt
@@ -173,7 +173,7 @@ The ISO image is a **hybrid boot image** designed for USB:
 2.  **Login**:
     -   User: `snosu`
     -   Password: `nixos`
-3.  **Cockpit**: Access `https://<IP_ADDRESS>:9090`
+3.  **LXConsole**: Access `http://<IP_ADDRESS>:5000`
 4.  **Firmware Compatibility (if hardware is missing)**:
     -   Default ISO includes a pruned firmware set to keep downloads small.
     -   If WiFi/GPU/NIC firmware is missing on your system, temporarily enable full firmware:
@@ -187,10 +187,10 @@ The ISO image is a **hybrid boot image** designed for USB:
 5.  **ZFS Import**:
     -   Run `import-proxmox-pools` to scan
     -   Use `zpool import -f <poolname>` to force import if uncleanly unmounted
-6.  **Booting Local Drives**:
+6.  **Managing Containers/VMs**:
     -   Use GRUB's OS detection (enabled by default)
-    -   Boot local drives as VMs through Cockpit/libvirt
-    -   Use the machine's BIOS/UEFI boot menu to chainload
+    -   Create and manage containers/VMs through LXConsole web interface
+    -   Use the machine's BIOS/UEFI boot menu to chainload local drives
 
 ## Developer Tools
 
@@ -262,14 +262,13 @@ nix run .#theme-vm -- --base nixos
 - **EFI mode not working**: Try disabling Secure Boot in UEFI settings
 - **Ventoy not detecting**: Ensure the `.iso` file is in the root of the Ventoy partition
 
-### Cockpit Login / Connection Failed
+### LXConsole Connection Issues
 
-If the browser shows `Connection failed` after login, inspect the socket-activated Cockpit units
-instead of only `journalctl -u cockpit`:
+If you cannot access the LXConsole web interface, check the service status:
 
 ```bash
-systemctl status cockpit.socket cockpit.service cockpit-wsinstance-http.service cockpit-session@*
-journalctl -b -u cockpit.socket -u cockpit.service -u 'cockpit-wsinstance*' -u 'cockpit-session*' --no-pager
+systemctl status lxconsole incus
+journalctl -b -u lxconsole -u incus --no-pager
 ```
 
-Also use `https://<IP_ADDRESS>:9090` (not `http://`) to avoid session/websocket issues on some clients.
+Ensure you're accessing `http://<IP_ADDRESS>:5000` (not `https://`).
