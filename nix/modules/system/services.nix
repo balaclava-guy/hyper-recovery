@@ -16,6 +16,11 @@ in
 
     # Preseed configuration for declarative initialization
     preseed = {
+      # Enable HTTPS API for remote management
+      config = {
+        "core.https_address" = "[::]:8443";
+      };
+
       networks = [
         {
           name = "incusbr0";
@@ -112,6 +117,53 @@ in
     "d /var/lib/lxconsole 0750 lxconsole lxconsole -"
   ];
 
+  # Auto-configure lxconsole with Incus connection
+  systemd.services.lxconsole-auto-configure = {
+    description = "Auto-configure LXConsole with local Incus server";
+    after = [ "incus.service" "lxconsole.service" ];
+    wants = [ "incus.service" "lxconsole.service" ];
+    wantedBy = [ "multi-user.target" ];
+
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      User = "lxconsole";
+      Group = "lxconsole";
+    };
+
+    script = ''
+      # Wait for lxconsole to generate certificates and database
+      for i in {1..30}; do
+        if [ -f /var/lib/lxconsole/certs/client.crt ] && [ -f /var/lib/lxconsole/lxconsole.db ]; then
+          break
+        fi
+        sleep 1
+      done
+
+      # Trust the certificate in Incus (run as incus-admin group member)
+      if [ -f /var/lib/lxconsole/certs/client.crt ]; then
+        if ! ${pkgs.incus-lts}/bin/incus config trust list --format=csv 2>/dev/null | grep -q lxconsole; then
+          ${pkgs.incus-lts}/bin/incus config trust add-certificate /var/lib/lxconsole/certs/client.crt --name=lxconsole 2>/dev/null || true
+        fi
+      fi
+
+      # Pre-configure server in lxconsole database if not already configured
+      if [ -f /var/lib/lxconsole/lxconsole.db ]; then
+        # Check if server already exists
+        SERVER_EXISTS=$(${pkgs.sqlite}/bin/sqlite3 /var/lib/lxconsole/lxconsole.db \
+          "SELECT COUNT(*) FROM servers WHERE name='local';" 2>/dev/null || echo "0")
+
+        if [ "$SERVER_EXISTS" = "0" ]; then
+          # Add local Incus server (using https://127.0.0.1:8443)
+          ${pkgs.sqlite}/bin/sqlite3 /var/lib/lxconsole/lxconsole.db <<SQL
+            INSERT OR IGNORE INTO servers (name, addr, protocol, auth_type, description)
+            VALUES ('local', 'https://127.0.0.1:8443', 'incus', 'tls', 'Local Incus server (auto-configured)');
+SQL
+        fi
+      fi
+    '';
+  };
+
   # Add LXConsole info to MOTD
   environment.etc."profile.d/lxconsole-motd.sh".text = ''
     echo ""
@@ -119,6 +171,6 @@ in
     echo ""
   '';
 
-  # Open firewall for lxconsole
-  networking.firewall.allowedTCPPorts = [ 5000 ];
+  # Open firewall for lxconsole and Incus API
+  networking.firewall.allowedTCPPorts = [ 5000 8443 ];
 }
