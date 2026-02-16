@@ -41,7 +41,8 @@ def build_image(debug=False):
     print(f"\n=== Building {target} image on remote builder ===")
 
     # Build on remote builder (Nix will automatically use the builder from nix.conf)
-    build_cmd = f"nix build .#{target} --print-out-paths --builders ''"
+    # We need to explicitly specify the system to trigger remote building
+    build_cmd = f"nix build .#{target} --print-out-paths --system x86_64-linux"
     out_path = run_cmd(build_cmd, f"Building {target} image", capture=True)
 
     # Find the ISO file
