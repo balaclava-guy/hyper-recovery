@@ -58,6 +58,21 @@ python3.pkgs.buildPythonApplication rec {
 import os
 import sys
 
+# Set instance path BEFORE any imports
+instance_path = os.environ.get('FLASK_INSTANCE_PATH', '/var/lib/lxconsole')
+os.makedirs(instance_path, exist_ok=True)
+
+# Monkey-patch Flask to use our instance_path
+import flask
+_original_flask_init = flask.Flask.__init__
+
+def _patched_flask_init(self, *args, **kwargs):
+    if 'instance_path' not in kwargs:
+        kwargs['instance_path'] = instance_path
+    _original_flask_init(self, *args, **kwargs)
+
+flask.Flask.__init__ = _patched_flask_init
+
 # Add share directory to Python path so 'lxconsole' package can be imported
 sys.path.insert(0, '$out/share/lxconsole')
 
