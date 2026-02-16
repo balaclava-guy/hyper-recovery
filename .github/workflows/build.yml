@@ -202,6 +202,7 @@ jobs:
         run: |
           mkdir -p dist
           find -L result-artifacts -name "*.7z" -exec cp {} dist/ \;
+
           echo "Contents of dist/:"
           ls -lh dist/
           count=$(ls dist/*.7z 2>/dev/null | wc -l)
@@ -215,7 +216,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: live-iso
-          path: dist/hyper-recovery-live.iso.7z
+          path: dist/*hyper-recovery-*.iso.7z
           if-no-files-found: error
           compression-level: 0
           retention-days: 90
@@ -224,7 +225,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: debug-iso
-          path: dist/hyper-recovery-debug.iso.7z
+          path: dist/*hyper-recovery-*-debug.iso.7z
           if-no-files-found: ignore
           compression-level: 0
           retention-days: 90
@@ -315,7 +316,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: live-iso
-          path: dist/hyper-recovery-live.iso.7z
+          path: dist/*hyper-recovery-*.iso.7z
           if-no-files-found: error
           compression-level: 0
           retention-days: 90
@@ -324,7 +325,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: debug-iso
-          path: dist/hyper-recovery-debug.iso.7z
+          path: dist/*hyper-recovery-*-debug.iso.7z
           if-no-files-found: ignore
           compression-level: 0
           retention-days: 90
