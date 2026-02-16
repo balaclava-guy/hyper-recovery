@@ -28,30 +28,39 @@ python3.pkgs.buildPythonApplication rec {
   # Don't run tests (requires incus server)
   doCheck = false;
 
-  # Create wrapper script
-  postInstall = ''
+  # Custom install phase to copy application files and create wrapper script
+  installPhase = ''
+    runHook preInstall
+
     mkdir -p $out/share/lxconsole
-    cp -r $src/static $out/share/lxconsole/
-    cp -r $src/templates $out/share/lxconsole/
+    mkdir -p $out/bin
 
-    # Create run script
+    # Copy the entire lxconsole package directory (contains static/, templates/, etc.)
+    cp -r $src/lxconsole $out/share/lxconsole/
+
+    # Copy the run script
+    cp $src/run.py $out/share/lxconsole/
+
+    # Create wrapper script that runs the Flask app
     cat > $out/bin/lxconsole <<EOF
-    #!${python3}/bin/python3
-    import os
-    import sys
+#!${python3}/bin/python3
+import os
+import sys
 
-    # Set working directory to share directory
-    os.chdir('$out/share/lxconsole')
+# Add share directory to Python path so 'lxconsole' package can be imported
+sys.path.insert(0, '$out/share/lxconsole')
 
-    # Import and run the app
-    sys.path.insert(0, '$out/${python3.sitePackages}')
-    from run import app
+# Change to the application directory
+os.chdir('$out/share/lxconsole')
 
-    if __name__ == '__main__':
-        app.run(host='0.0.0.0', port=5000)
-    EOF
+# Import and run the Flask application
+from run import app
+app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
+EOF
 
     chmod +x $out/bin/lxconsole
+
+    runHook postInstall
   '';
 
   meta = with lib; {
