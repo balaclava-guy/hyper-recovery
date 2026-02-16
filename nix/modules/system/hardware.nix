@@ -22,6 +22,8 @@ in
     "fbcon=nodefer"
     "plymouth.ignore-serial-consoles"
     "iwlwifi.power_save=0"
+    # AppArmor is configured via security.apparmor.enable
+    # (NixOS manages LSM configuration automatically)
   ];
   
   # Suppress console messages during boot (for Plymouth)
@@ -59,10 +61,14 @@ in
   boot.initrd.availableKernelModules = [ "virtio_gpu" "virtio_pci" "9p" "9pnet_virtio" "dm_thin_pool" "dm_persistent_data" "dm_bio_prison" "dm_bufio" ];
 
   boot.kernelModules = [
+    # LVM thin-pool support
     "dm_thin_pool"
     "dm_persistent_data"
     "dm_bio_prison"
     "dm_bufio"
+    # KVM virtualization support
+    "kvm-intel"
+    "kvm-amd"
   ];
 
   # LVM thin-pool support for Proxmox "pve" volume groups.
@@ -109,4 +115,10 @@ in
     pkgs.wireless-regdb
   ];
   hardware.wirelessRegulatoryDatabase = true;
+
+  # AppArmor for container security (fixed in nixpkgs PR #386060)
+  # Note: apparmor.service shows failed at boot due to Incus cache directory
+  # not existing yet, but Incus creates it and loads profiles correctly after
+  # startup. Containers run with proper AppArmor confinement.
+  security.apparmor.enable = true;
 }

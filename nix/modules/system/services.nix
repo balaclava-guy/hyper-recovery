@@ -173,4 +173,9 @@ SQL
 
   # Open firewall for lxconsole and Incus API
   networking.firewall.allowedTCPPorts = [ 5000 8443 ];
+
+  # Allow DHCP for Incus bridge (required for container networking)
+  # See: https://wiki.nixos.org/wiki/Incus
+  networking.firewall.allowedUDPPorts = [ 67 68 ]; # DHCP client/server
+  networking.firewall.trustedInterfaces = [ "incusbr0" ];
 }
