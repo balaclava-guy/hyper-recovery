@@ -117,8 +117,13 @@ in
   hardware.wirelessRegulatoryDatabase = true;
 
   # AppArmor for container security (fixed in nixpkgs PR #386060)
-  # Note: apparmor.service shows failed at boot due to Incus cache directory
-  # not existing yet, but Incus creates it and loads profiles correctly after
-  # startup. Containers run with proper AppArmor confinement.
   security.apparmor.enable = true;
+
+  # Pre-create Incus AppArmor directories to prevent boot-time race condition
+  # apparmor.service tries to load Incus profiles before Incus creates these directories
+  systemd.tmpfiles.rules = [
+    "d /var/lib/incus/security/apparmor 0700 root root -"
+    "d /var/lib/incus/security/apparmor/cache 0700 root root -"
+    "d /var/lib/incus/security/apparmor/profiles 0700 root root -"
+  ];
 }
